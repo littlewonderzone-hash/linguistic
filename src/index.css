@@ -65,35 +65,63 @@ body {
 .lx-serif { font-family: var(--font-serif); }
 .lx-serif-bn { font-family: var(--font-serif-bn); }
 
-/* বর্ণমালার ঘরের চার্ট: ১০ কলাম, পাতলা রেখা, প্রতিটা ঘরে একটা বর্ণ */
+/* ---- হিরো: গাঢ় সবুজ-নীল ব্ল্যাকবোর্ড, ঝাপসা গ্রিড ও আলোর আভা ---- */
+.lx-hero {
+  position: relative;
+  overflow: hidden;
+  color: var(--color-paper);
+  background:
+    radial-gradient(60rem 28rem at 85% -10%, color-mix(in srgb, var(--color-marigold) 38%, transparent), transparent 60%),
+    radial-gradient(40rem 26rem at -5% 110%, color-mix(in srgb, var(--color-bluepen) 55%, transparent), transparent 60%),
+    linear-gradient(160deg, #0a2b2c 0%, #0f3d3e 55%, #123f56 100%);
+}
+.lx-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at 70% 40%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at 70% 40%, #000 20%, transparent 75%);
+  pointer-events: none;
+}
+
+/* ---- বর্ণমালার চার্ট ---- */
 .lx-chart {
   display: grid;
   grid-template-columns: repeat(10, minmax(0, 1fr));
-  border-top: 1.5px solid var(--color-ink);
-  border-left: 1.5px solid var(--color-ink);
-  background: color-mix(in srgb, white 70%, var(--color-paper));
+  border-top: 1px solid rgba(255,255,255,0.35);
+  border-left: 1px solid rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(2px);
+  box-shadow: 0 30px 60px -20px rgba(0,0,0,0.55);
 }
 .lx-cell {
   aspect-ratio: 1 / 1;
   display: grid;
   place-items: center;
-  border-right: 1px solid var(--color-paper-line);
-  border-bottom: 1px solid var(--color-paper-line);
+  border-right: 1px solid rgba(255,255,255,0.35);
+  border-bottom: 1px solid rgba(255,255,255,0.35);
   font-family: var(--font-serif);
-  font-size: clamp(0.95rem, 2.9vw, 1.35rem);
+  font-size: clamp(0.95rem, 2.9vw, 1.4rem);
   line-height: 1;
-  color: var(--color-ink);
+  color: rgba(239,241,236,0.88);
+  transition: background 0.2s, color 0.2s, transform 0.2s;
 }
-.lx-cell:nth-child(10n) { border-right: 1.5px solid var(--color-ink); }
-.lx-chart > .lx-cell:nth-last-child(-n + 10) { border-bottom: 1.5px solid var(--color-ink); }
-
-/* হাইলাইট করা সারি: "Linguistic" — একবারই ঘরগুলো একটা একটা করে ঘুরে বসে */
+.lx-cell:not(.lx-cell-hit):hover {
+  background: var(--color-marigold);
+  color: var(--color-ink-dark);
+  transform: scale(1.12);
+  position: relative;
+  z-index: 1;
+}
 .lx-cell-hit {
   background: var(--color-marigold);
   color: var(--color-ink-dark);
   font-weight: 700;
   font-style: italic;
-  border-color: var(--color-marigold-dark);
   animation: lx-flip 0.7s cubic-bezier(0.3, 0.7, 0.2, 1) both;
   animation-delay: calc(var(--i) * 70ms + 250ms);
 }
@@ -101,29 +129,101 @@ body {
   from { transform: rotateX(90deg); opacity: 0; }
   to { transform: rotateX(0deg); opacity: 1; }
 }
+.lx-chart-faded { opacity: 0.55; box-shadow: none; }
+.lx-chart-faded .lx-cell-hit { animation: none; }
 
-.lx-chart-faded .lx-cell { color: color-mix(in srgb, var(--color-ink) 35%, transparent); }
-.lx-chart-faded .lx-cell-hit { animation: none; background: color-mix(in srgb, var(--color-marigold) 35%, transparent); color: transparent; }
-
-/* অভিধানের এন্ট্রি: শব্দ, পদ, সংজ্ঞা — দুই কলামের পাতার মতো */
-.lx-dict {
-  column-gap: 3rem;
-  column-rule: 1px solid var(--color-paper-line);
+/* ---- ভেসে থাকা শুভেচ্ছা-বুদবুদ (নানা ভাষায় "হ্যালো") ---- */
+.lx-bubble {
+  position: absolute;
+  z-index: 2;
+  padding: 0.35rem 0.8rem;
+  border-radius: 1rem 1rem 1rem 0.2rem;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-serif);
+  font-size: 0.85rem;
+  font-weight: 700;
+  box-shadow: 0 10px 24px -8px rgba(0,0,0,0.5);
+  animation: lx-float 6s ease-in-out infinite;
+  animation-delay: var(--d, 0s);
 }
-@media (min-width: 768px) { .lx-dict { column-count: 2; } }
-.lx-entry {
-  break-inside: avoid;
-  padding: 0.85rem 0;
-  border-bottom: 1px solid var(--color-paper-line);
+.lx-bubble-alt { background: var(--color-marigold); color: var(--color-ink-dark); border-radius: 1rem 1rem 0.2rem 1rem; }
+@keyframes lx-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9px); }
 }
-.lx-entry:last-child { border-bottom: 0; }
 
-/* আন্তঃরৈখিক (interlinear) সারি — ধাপগুলো মরফিমের মতো হাইফেনে জোড়া */
-.lx-steps { display: flex; flex-wrap: wrap; gap: 0.5rem 0; }
-.lx-step { flex: 1 1 10rem; position: relative; padding: 0 1.1rem 0 0; }
-.lx-step + .lx-step { padding-left: 1.1rem; border-left: 1px dashed var(--color-ink); }
+/* ---- নানা ভাষার শুভেচ্ছা-ফিতা ---- */
+.lx-marquee { overflow: hidden; background: var(--color-marigold); color: var(--color-ink-dark); border-block: 2px solid var(--color-ink-dark); }
+.lx-marquee-track { display: flex; width: max-content; animation: lx-scroll 38s linear infinite; }
+.lx-marquee-track span { padding: 0.55rem 1.6rem; font-family: var(--font-serif); font-weight: 700; white-space: nowrap; }
+.lx-marquee-track span::after { content: "✦"; margin-left: 3.2rem; opacity: 0.6; }
+@keyframes lx-scroll { to { transform: translateX(-50%); } }
 
-@media (max-width: 639px) {
-  .lx-step { flex: 1 1 45%; }
-  .lx-step:nth-child(odd) { padding-left: 0; border-left: 0; }
+/* ---- ফিচার কার্ড — প্রতিটায় একটা লিপির বর্ণ ---- */
+.lx-feature {
+  position: relative;
+  overflow: hidden;
+  border: 1.5px solid var(--color-ink);
+  background: white;
+  padding: 1.25rem 1.25rem 1.4rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 5px 5px 0 var(--accent, var(--color-ink));
+}
+.lx-feature:hover { transform: translate(-2px, -2px); box-shadow: 8px 8px 0 var(--accent, var(--color-ink)); }
+.lx-glyph {
+  display: grid;
+  place-items: center;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 9999px;
+  background: var(--accent, var(--color-ink));
+  color: white;
+  font-family: var(--font-serif);
+  font-size: 1.7rem;
+  line-height: 1;
+}
+.lx-feature-bg {
+  position: absolute;
+  right: -0.4rem;
+  bottom: -2.4rem;
+  font-family: var(--font-serif);
+  font-size: 8rem;
+  line-height: 1;
+  color: var(--accent, var(--color-ink));
+  opacity: 0.07;
+  pointer-events: none;
+}
+
+/* ---- ছোট্ট ধাঁধা (রোজেটা-স্টোন ধাঁচ) ---- */
+.lx-puzzle { background: var(--color-ink); color: var(--color-paper); }
+.lx-pair { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 0.7rem 0; border-bottom: 1px dashed rgba(255,255,255,0.25); }
+.lx-pair:last-of-type { border-bottom: 0; }
+.lx-opt {
+  border: 1.5px solid rgba(255,255,255,0.55);
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.lx-opt:hover:not(:disabled) { background: var(--color-paper); color: var(--color-ink); }
+.lx-opt-right { background: var(--color-greenpen) !important; border-color: var(--color-greenpen) !important; color: white !important; }
+.lx-opt-wrong { background: var(--color-redpen) !important; border-color: var(--color-redpen) !important; color: white !important; }
+
+/* ---- ধাপ: সংযোগ-রেখাসহ ---- */
+.lx-steps { display: grid; gap: 1.5rem; grid-template-columns: repeat(2, minmax(0, 1fr)); counter-reset: step; }
+@media (min-width: 768px) { .lx-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.lx-step { position: relative; padding-top: 3.2rem; }
+.lx-step-num {
+  position: absolute; top: 0; left: 0;
+  display: grid; place-items: center;
+  width: 2.5rem; height: 2.5rem; border-radius: 9999px;
+  background: var(--color-ink); color: var(--color-paper);
+  font-family: var(--font-serif); font-weight: 700;
+  z-index: 1;
+}
+@media (min-width: 768px) {
+  .lx-step:not(:last-child)::before {
+    content: ""; position: absolute; top: 1.25rem; left: 2.5rem; right: -1.5rem;
+    border-top: 2px dashed var(--color-ink); opacity: 0.35;
+  }
 }

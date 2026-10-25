@@ -6,11 +6,23 @@ import Loader from "../components/Loader";
 export default function Leaderboard() {
   const [examType, setExamType] = useState("live");
   const [rows, setRows] = useState(null);
+  const [liveExams, setLiveExams] = useState([]);
+  const [liveExamId, setLiveExamId] = useState("");
+
+  useEffect(() => {
+    api.liveExamStatus().then((res) => {
+      const list = res.ok ? res.data.exams || [] : [];
+      setLiveExams(list);
+      // ডিফল্টে সবচেয়ে সাম্প্রতিক শুরু হওয়া লাইভ পরীক্ষা
+      const started = list.filter((e) => e.status !== "upcoming");
+      if (started.length) setLiveExamId(started[started.length - 1].id);
+    });
+  }, []);
 
   useEffect(() => {
     setRows(null);
-    api.leaderboard(examType).then((res) => setRows(res.ok ? res.data : []));
-  }, [examType]);
+    api.leaderboard(examType, examType === "live" ? liveExamId : undefined).then((res) => setRows(res.ok ? res.data : []));
+  }, [examType, liveExamId]);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
@@ -32,6 +44,15 @@ export default function Leaderboard() {
           </button>
         ))}
       </div>
+
+      {examType === "live" && liveExams.length > 0 && (
+        <select className="input mt-4" value={liveExamId} onChange={(e) => setLiveExamId(e.target.value)}>
+          <option value="">সব লাইভ পরীক্ষা (সর্বোচ্চ নম্বর)</option>
+          {liveExams.map((e) => (
+            <option key={e.id} value={e.id}>{e.title}</option>
+          ))}
+        </select>
+      )}
 
       <div className="mt-6 space-y-2">
         {rows === null && <Loader label="তালিকা লোড হচ্ছে…" />}

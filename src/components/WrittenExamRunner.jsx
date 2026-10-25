@@ -4,8 +4,7 @@ import { api } from "../lib/api";
 import Loader from "../components/Loader";
 import { fileToDataUrl, compressImage } from "../lib/image";
 
-const MINUTES = { written: 25, spelling: 20 };
-const TITLE = { written: "অনুধাবনমূলক পরীক্ষা", spelling: "বিভাগীয় সেরা ২০ বানান প্রতিযোগিতা" };
+const TITLE = { written: "লিখিত পরীক্ষা" };
 
 /** ছবি তোলা/আপলোডের জন্য দুইটা আলাদা বাটন — কিছু ফোনে "capture" দেওয়া থাকলে
  *  ক্যামেরা খোলে না (শুধু ফাইল/গ্যালারি কাজ করে), আবার কিছু ফোনে সম্মিলিত
@@ -26,16 +25,14 @@ function PhotoPicker({ onFile }) {
   );
 }
 
-export default function WrittenExamRunner({ examType = "mock", kind = "written", onFinished }) {
+export default function WrittenExamRunner({ examType = "mock", kind = "written", liveExamId = "", onFinished }) {
   const token = localStorage.getItem("linguistic_student_token");
-  const minutes = MINUTES[kind] || 30;
-  const isSpelling = kind === "spelling";
 
   const [stage, setStage] = useState("loading");
   const [error, setError] = useState("");
   const [sets, setSets] = useState([]);
   const [images, setImages] = useState({});
-  const [secondsLeft, setSecondsLeft] = useState(minutes * 60);
+  const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 });
 
   const stageRef = useRef("loading");
@@ -48,12 +45,12 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
   useEffect(() => {
     if (!token) return;
     api
-      .startWrittenExam(token, examType, kind)
+      .startWrittenExam(token, examType, kind, liveExamId)
       .then((res) => {
         if (res.ok) {
           sessionIdRef.current = res.data.sessionId;
           setSets(res.data.sets);
-          setSecondsLeft(minutes * 60);
+          setSecondsLeft((Number(res.data.minutes) > 0 ? Number(res.data.minutes) : 25) * 60);
           setStage("exam");
         } else {
           setError(res.message || "পরীক্ষা শুরু করা যায়নি।");
@@ -124,6 +121,7 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
           token,
           examType,
           kind,
+          liveExamId,
           sessionId: sessionIdRef.current,
           items,
           imageBase64: image.dataUrl,
@@ -201,9 +199,7 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
       </div>
 
       <p className="mx-auto mt-3 max-w-2xl px-4 text-xs text-[var(--color-text)]/60">
-        {isSpelling
-          ? "সবগুলো বানানের উত্তর একই পৃষ্ঠায় লিখে একটাই ছবি তুলুন/আপলোড করুন।"
-          : "একটা উদ্দীপকের সবগুলো প্রশ্নের উত্তর একই পৃষ্ঠায় (বা টানা কয়েক পৃষ্ঠায়) লিখে তার একটাই ছবি তুলুন/আপলোড করুন।"}{" "}
+        {"একটা উদ্দীপকের সবগুলো প্রশ্নের উত্তর একই পৃষ্ঠায় (বা টানা কয়েক পৃষ্ঠায়) লিখে তার একটাই ছবি তুলুন/আপলোড করুন।"}{" "}
         উত্তরপত্র জমা: {answeredSets}/{sets.length}
       </p>
 
@@ -226,9 +222,7 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
                 const hasText = String(sq.text || "").replace(/<[^>]*>/g, "").trim() !== "";
                 return (
                   <li key={sq.id} className="font-semibold text-[var(--color-ink)]">
-                    {isSpelling ? (
-                      sq.text
-                    ) : hasText ? (
+                    {hasText ? (
                       <span dangerouslySetInnerHTML={{ __html: sq.text }} />
                     ) : (
                       !sq.imageUrl && <span>প্রশ্ন নং {qi + 1}</span>

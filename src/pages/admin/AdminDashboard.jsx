@@ -43,6 +43,7 @@ export default function AdminDashboard() {
             ["writtenQuestions", "প্রশ্ন (লেখা/ছবি)"],
             ["grading", "খাতা মূল্যায়ন"],
             ["notices", "নোটিশ"],
+            ["liveExams", "লাইভ পরীক্ষা"],
             ["liveResults", "লাইভ ফলাফল"],
             ["contacts", "মতামত"],
             ["offline", "অফলাইন প্রশ্নপত্র"],
@@ -65,6 +66,7 @@ export default function AdminDashboard() {
           {tab === "writtenQuestions" && <WrittenQuestions token={token} />}
           {tab === "grading" && <Grading token={token} />}
           {tab === "notices" && <Notices token={token} />}
+          {tab === "liveExams" && <LiveExamsAdmin token={token} />}
           {tab === "liveResults" && <LiveResults token={token} />}
           {tab === "contacts" && <Contacts token={token} />}
           {tab === "offline" && <OfflineExams token={token} />}
@@ -241,15 +243,16 @@ function Settings({ token }) {
       </label>
 
       <div className="rounded-lg border border-[var(--color-paper-line)] p-3">
-        <p className="mb-2 text-sm font-bold text-[var(--color-ink)]">লাইভ পরীক্ষার সময়সূচি</p>
-        <Field label="শুরুর তারিখ ও সময়">
-          <input className="input" type="datetime-local" value={form.liveExamStart || ""} onChange={set("liveExamStart")} />
+        <p className="mb-2 text-sm font-bold text-[var(--color-ink)]">লিখিত পরীক্ষা (মক টেস্ট)</p>
+        <Field label="পরীক্ষার সময় (মিনিট)">
+          <input className="input" type="number" min="1" value={form.writtenMinutes || ""} onChange={set("writtenMinutes")} placeholder="যেমনঃ 25" />
         </Field>
-        <Field label="শেষের তারিখ ও সময়">
-          <input className="input" type="datetime-local" value={form.liveExamEnd || ""} onChange={set("liveExamEnd")} />
+        <Field label="প্রতিবার কয়টা সেট (উদ্দীপক) আসবে">
+          <input className="input" type="number" min="1" value={form.setsPerExam || ""} onChange={set("setsPerExam")} placeholder="যেমনঃ 3" />
         </Field>
         <p className="text-xs text-[var(--color-text)]/60">
-          এই সময়ের মধ্যে যেকোনো সময় স্টুডেন্ট লাইভ পরীক্ষা (অনুধাবনমূলক, ২৫ মিনিট) শুরু করতে পারবে।
+          একটা সেটের ভেতরে যত খুশি প্রশ্ন রাখা যায় (প্রশ্ন ট্যাবে "+ আরেকটা প্রশ্ন যোগ করুন")। লাইভ পরীক্ষার সময় ও সময়সূচি
+          আলাদা "লাইভ পরীক্ষা" ট্যাব থেকে ঠিক করুন।
         </p>
       </div>
 
@@ -425,6 +428,7 @@ const emptyWrittenQuestion = {
   status: "draft",
   forMock: true,
   forLive: false,
+  liveExamId: "",
 };
 
 function WrittenQuestions({ token }) {
@@ -435,10 +439,12 @@ function WrittenQuestions({ token }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
+  const [liveExams, setLiveExams] = useState([]);
 
   function load() {
     setList(null);
     api.adminListWrittenQuestions(token).then((res) => setList(res.ok ? res.data : []));
+    api.adminListLiveExams(token).then((res) => setLiveExams(res.ok ? res.data : []));
   }
 
   useEffect(load, [token]);
@@ -461,18 +467,17 @@ function WrittenQuestions({ token }) {
   async function save(status) {
     setError("");
     const hasText = (html) => String(html || "").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() !== "";
-    const isSpelling = form.kind === "spelling";
     // লেখাও নেই ছবিও নেই এমন "ফাঁকা" প্রশ্ন বাদ — তবে উদ্দীপকে (লেখা/ছবি) পুরো প্রশ্ন থাকলে
     // ফাঁকা প্রশ্ন-স্লট রাখা যায় (শুধু নম্বর ও উত্তরের ছবির জন্য)
     const hasPassage = hasText(form.passageHtml) || form.passageImageBase64 || form.passageImageUrl;
     const cleanSubQuestions = form.subQuestions.filter(
-      (sq) => hasText(sq.text) || sq.imageBase64 || sq.imageUrl || (!isSpelling && hasPassage)
+      (sq) => hasText(sq.text) || sq.imageBase64 || sq.imageUrl || hasPassage
     );
     if (cleanSubQuestions.length === 0) {
-      setError(isSpelling ? "অন্তত একটা বানান লিখুন।" : "অন্তত একটা প্রশ্ন (লেখা বা ছবি) যোগ করুন।");
+      setError("অন্তত একটা প্রশ্ন (লেখা বা ছবি) যোগ করুন।");
       return;
     }
-    if (!isSpelling && !hasPassage && !cleanSubQuestions.some((sq) => hasText(sq.text) || sq.imageBase64 || sq.imageUrl)) {
+    if (!hasPassage && !cleanSubQuestions.some((sq) => hasText(sq.text) || sq.imageBase64 || sq.imageUrl)) {
       setError("উদ্দীপক বা প্রশ্নের লেখা অথবা ছবি দিন।");
       return;
     }
@@ -507,6 +512,7 @@ function WrittenQuestions({ token }) {
       status: q.status || "draft",
       forMock: q.forMock === true || q.forMock === "TRUE",
       forLive: q.forLive === true || q.forLive === "TRUE",
+      liveExamId: q.liveExamId || "",
     });
     setResetKey((k) => k + 1);
     setError("");
@@ -535,14 +541,7 @@ function WrittenQuestions({ token }) {
         </h3>
         {error && <p className="rounded-lg bg-[var(--color-redpen)]/10 px-3 py-2 text-sm text-[var(--color-redpen)]">{error}</p>}
 
-        <Field label="ধরন">
-          <select className="input" value={form.kind} onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value }))}>
-            <option value="written">অনুধাবনমূলক পরীক্ষা (উদ্দীপক + প্রশ্ন)</option>
-            <option value="spelling">বিভাগীয় সেরা ২০ বানান প্রতিযোগিতা</option>
-          </select>
-        </Field>
-
-        {form.kind === "written" && (
+        {(
           <Field label="উদ্দীপক">
             <RichTextEditor
               value={form.passageHtml}
@@ -553,7 +552,7 @@ function WrittenQuestions({ token }) {
           </Field>
         )}
 
-        {form.kind === "written" && (
+        {(
           <ImagePicker
             label="উদ্দীপক / পুরো প্রশ্নের ছবি (ঐচ্ছিক — লেখা না দিয়ে শুধু ছবিও চলবে)"
             url={form.passageImageUrl}
@@ -564,7 +563,7 @@ function WrittenQuestions({ token }) {
 
         <div className="space-y-3">
           <span className="block text-sm font-semibold text-[var(--color-ink)]">
-            {form.kind === "spelling" ? "ভুল বানানগুলো (একটা করে)" : "প্রশ্নসমূহ"}
+            প্রশ্নসমূহ
           </span>
           {form.subQuestions.map((sq, i) => (
             <div key={i} className="rounded-lg border border-[var(--color-paper-line)] bg-[var(--color-paper)] p-3">
@@ -580,22 +579,13 @@ function WrittenQuestions({ token }) {
                   ✕ বাদ দিন
                 </button>
               </div>
-              {form.kind === "spelling" ? (
-                <input
-                  className="input"
-                  placeholder="যেমনঃ সমীচিণ"
-                  value={sq.text}
-                  onChange={(e) => updateSubQuestion(i, "text", e.target.value)}
-                />
-              ) : (
                 <RichTextEditor
                   value={sq.text}
                   onChange={(html) => updateSubQuestion(i, "text", html)}
                   placeholder={`${i + 1} নম্বর প্রশ্ন লিখুন... (ছবি দিলে লেখা ফাঁকা রাখা যায়)`}
                   resetKey={`${resetKey}-${i}`}
                 />
-              )}
-              {form.kind === "written" && (
+              {(
                 <div className="mt-2">
                   <ImagePicker
                     label={`${i + 1} নম্বর প্রশ্নের ছবি (ঐচ্ছিক)`}
@@ -625,7 +615,7 @@ function WrittenQuestions({ token }) {
             onClick={addSubQuestion}
             className="rounded-lg border border-[var(--color-paper-line)] px-3 py-1 text-xs font-bold text-[var(--color-ink)]"
           >
-            + আরেকটা {form.kind === "spelling" ? "বানান" : "প্রশ্ন"} যোগ করুন
+            + আরেকটা প্রশ্ন যোগ করুন
           </button>
         </div>
 
@@ -637,6 +627,16 @@ function WrittenQuestions({ token }) {
             <input type="checkbox" checked={form.forLive} onChange={(e) => setForm((f) => ({ ...f, forLive: e.target.checked }))} /> লাইভ টেস্ট
           </label>
         </div>
+        {form.forLive && (
+          <Field label="কোন লাইভ পরীক্ষায় আসবে?">
+            <select className="input" value={form.liveExamId || ""} onChange={(e) => setForm((f) => ({ ...f, liveExamId: e.target.value }))}>
+              <option value="">সব লাইভ পরীক্ষায়</option>
+              {liveExams.map((ex) => (
+                <option key={ex.id} value={ex.id}>{ex.title}</option>
+              ))}
+            </select>
+          </Field>
+        )}
 
         <div className="flex gap-2">
           <button
@@ -677,7 +677,7 @@ function WrittenQuestions({ token }) {
                     <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${q.status === "published" ? "bg-[var(--color-greenpen)]/15 text-[var(--color-greenpen)]" : "bg-[var(--color-marigold)]/20 text-[var(--color-marigold-dark)]"}`}>
                       {q.status === "published" ? "প্রকাশিত" : "ড্রাফট"}
                     </span>{" "}
-                    <span className="text-xs text-[var(--color-text)]/60">{q.kind === "spelling" ? "বানান" : "অনুধাবনমূলক"} · {(q.subQuestions || []).length}টি প্রশ্ন</span>
+                    <span className="text-xs text-[var(--color-text)]/60">লিখিত · {(q.subQuestions || []).length}টি প্রশ্ন</span>
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button onClick={() => startEdit(q)} className="text-xs font-bold text-[var(--color-bluepen)] underline">এডিট</button>
@@ -702,7 +702,7 @@ function WrittenQuestions({ token }) {
   );
 }
 
-const KIND_LABEL_ADMIN = { written: "অনুধাবনমূলক", spelling: "বানান প্রতিযোগিতা" };
+const KIND_LABEL_ADMIN = { written: "লিখিত" };
 const EXAM_TYPE_LABEL_ADMIN = { mock: "মক", live: "লাইভ" };
 
 function groupPendingWritten_(list) {
@@ -711,7 +711,7 @@ function groupPendingWritten_(list) {
     // ছবির লিংক দিয়ে গ্রুপ করা হয় — একটা আপলোড (submitWrittenAnswersBatch)
     // সবসময় একটাই ছবি তৈরি করে যেটা সেই ব্যাচের সবকটা প্রশ্ন শেয়ার করে,
     // এমনকি প্রশ্নগুলো ভিন্ন ভিন্ন মূল ডকুমেন্ট (writtenQuestionId) থেকে
-    // আসলেও (যেমন বানানের ৫টা শব্দ) — তাই ছবিই আসল গ্রুপিং কী।
+    // আসলেও (যেমন একাধিক উদ্দীপক) — তাই ছবিই আসল গ্রুপিং কী।
     const key = item.imageUrl;
     if (!groups[key]) {
       groups[key] = { key, imageUrl: item.imageUrl, kind: item.kind, examType: item.examType, passageHtml: item.passageHtml || "", passageImageUrl: item.passageImageUrl || "", items: [] };
@@ -849,21 +849,40 @@ function Grading({ token }) {
 
 function LiveResults({ token }) {
   const [rows, setRows] = useState(null);
+  const [exams, setExams] = useState(null);
+  const [examId, setExamId] = useState("");
 
   useEffect(() => {
-    api.adminLiveResults(token).then((res) => setRows(res.ok ? res.data : []));
+    api.adminListLiveExams(token).then((res) => {
+      const list = res.ok ? res.data : [];
+      setExams(list);
+      if (list.length) setExamId(list[list.length - 1].id);
+    });
   }, [token]);
 
-  if (rows === null) return <Loader label="লোড হচ্ছে…" />;
+  useEffect(() => {
+    if (exams === null) return;
+    setRows(null);
+    api.adminLiveResults(token, examId).then((res) => setRows(res.ok ? res.data : []));
+  }, [token, examId, exams]);
+
+  if (rows === null || exams === null) return <Loader label="লোড হচ্ছে…" />;
+  const examTitle = exams.find((e) => e.id === examId)?.title || "সব লাইভ পরীক্ষা";
 
   return (
     <div className="max-w-2xl">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="font-display text-lg font-bold text-[var(--color-ink)]">লাইভ পরীক্ষার ফলাফল (মূল্যায়ন শেষ হওয়া খাতা)</h3>
+        <h3 className="font-display text-lg font-bold text-[var(--color-ink)]">{examTitle} — ফলাফল (মূল্যায়ন শেষ হওয়া খাতা)</h3>
         <button onClick={() => window.print()} className="rounded-lg bg-[var(--color-ink)] px-4 py-1.5 text-sm font-bold text-white">
           প্রিন্ট / PDF ডাউনলোড
         </button>
       </div>
+      <select className="input mb-3" value={examId} onChange={(e) => setExamId(e.target.value)}>
+        <option value="">সব লাইভ পরীক্ষা (সর্বোচ্চ নম্বর)</option>
+        {exams.map((e) => (
+          <option key={e.id} value={e.id}>{e.title}</option>
+        ))}
+      </select>
       <p className="mb-2 text-xs text-[var(--color-text)]/60">
         প্রিন্ট বাটনে চাপলে ব্রাউজারের প্রিন্ট ডায়ালগ খুলবে — সেখান থেকে "Save as PDF" বেছে নিলে PDF হিসেবে সেভ হয়ে যাবে।
       </p>
@@ -932,15 +951,9 @@ function OfflineExams({ token }) {
   const items = [
     {
       key: "written",
-      title: "অনুধাবনমূলক প্রশ্নপত্র",
-      desc: "৩টা সেট, প্রতিটা আলাদা পাতায়, নিচে উত্তর লেখার জায়গাসহ, সময় ২৫ মিনিট।",
+      title: "লিখিত প্রশ্নপত্র",
+      desc: "সেটিংসে ঠিক করা সংখ্যক সেট, প্রতিটা আলাদা পাতায়, নিচে উত্তর লেখার জায়গাসহ। সময় সেটিংসের মিনিট অনুযায়ী।",
       call: api.adminGenerateOfflineWritten,
-    },
-    {
-      key: "spelling",
-      title: "বানান প্রতিযোগিতার প্রশ্নপত্র",
-      desc: "৫টা বানান একই পাতায়, প্রতিটার নিচে উত্তর লেখার জায়গাসহ, সময় ২০ মিনিট।",
-      call: api.adminGenerateOfflineSpelling,
     },
   ];
 
@@ -968,6 +981,144 @@ function OfflineExams({ token }) {
             </button>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function toLocalInput_(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const fmtBn_ = (iso) =>
+  new Date(iso).toLocaleString("bn-BD", { day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
+
+const emptyLive = { id: "", title: "", start: "", end: "", minutes: 25 };
+
+/** একাধিক লাইভ পরীক্ষা — একই দিনেও যত খুশি। প্রতিটার নাম, শুরু/শেষের উইন্ডো ও সময়কাল আলাদা।
+ *  স্টুডেন্ট প্রতিটা লাইভ পরীক্ষায় একবার অংশ নিতে পারে। */
+function LiveExamsAdmin({ token }) {
+  const [list, setList] = useState(null);
+  const [form, setForm] = useState(emptyLive);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState(null);
+
+  function load() {
+    setList(null);
+    api.adminListLiveExams(token).then((res) => setList(res.ok ? res.data : []));
+  }
+  useEffect(load, [token]);
+
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  async function save(e) {
+    e.preventDefault();
+    setError("");
+    if (!form.start || !form.end) {
+      setError("শুরু ও শেষের তারিখ-সময় দিন।");
+      return;
+    }
+    setSaving(true);
+    const res = await api.adminSaveLiveExam(token, {
+      id: form.id,
+      title: form.title,
+      // ব্রাউজারের লোকাল সময়কে UTC-তে বদলে পাঠানো হয় — স্ক্রিপ্টের টাইমজোন যাই হোক সময় ঠিক থাকে
+      start: new Date(form.start).toISOString(),
+      end: new Date(form.end).toISOString(),
+      minutes: Number(form.minutes),
+    });
+    setSaving(false);
+    if (res.ok) {
+      setForm(emptyLive);
+      load();
+    } else {
+      setError(res.message || "সেভ করা যায়নি।");
+    }
+  }
+
+  function startEdit(ex) {
+    setForm({ id: ex.id, title: ex.title, start: toLocalInput_(ex.start), end: toLocalInput_(ex.end), minutes: ex.minutes });
+    setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function remove(id) {
+    setBusyId(id);
+    await api.adminDeleteLiveExam(token, id);
+    setBusyId(null);
+    if (form.id === id) setForm(emptyLive);
+    load();
+  }
+
+  const now = Date.now();
+
+  return (
+    <div className="grid gap-6 md:grid-cols-2">
+      <form onSubmit={save} className="h-fit space-y-3 rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-5">
+        <h3 className="font-display text-lg font-bold text-[var(--color-ink)]">
+          {form.id ? "লাইভ পরীক্ষা এডিট করুন" : "নতুন লাইভ পরীক্ষা যোগ করুন"}
+        </h3>
+        {error && <p className="rounded-lg bg-[var(--color-redpen)]/10 px-3 py-2 text-sm text-[var(--color-redpen)]">{error}</p>}
+        <Field label="পরীক্ষার নাম">
+          <input className="input" value={form.title} onChange={set("title")} placeholder="যেমনঃ লাইভ টেস্ট ১ (সকাল)" />
+        </Field>
+        <Field label="শুরুর তারিখ ও সময় (এই সময় থেকে ঢোকা যাবে)">
+          <input className="input" type="datetime-local" required value={form.start} onChange={set("start")} />
+        </Field>
+        <Field label="শেষের তারিখ ও সময় (এরপর আর ঢোকা যাবে না)">
+          <input className="input" type="datetime-local" required value={form.end} onChange={set("end")} />
+        </Field>
+        <Field label="পরীক্ষার সময়কাল (মিনিট)">
+          <input className="input" type="number" min="1" required value={form.minutes} onChange={set("minutes")} />
+        </Field>
+        <p className="text-xs text-[var(--color-text)]/60">
+          একই দিনে যত খুশি লাইভ পরীক্ষা যোগ করা যায় (উইন্ডো ওভারল্যাপ করলেও সমস্যা নেই)। স্টুডেন্ট প্রতিটায় একবার অংশ নিতে পারবে।
+          কোন প্রশ্ন কোন লাইভ পরীক্ষায় আসবে তা প্রশ্ন ট্যাবে ঠিক করা যায়।
+        </p>
+        <div className="flex gap-2">
+          <button disabled={saving} className="flex-1 rounded-xl bg-[var(--color-ink)] px-4 py-3 font-display font-bold text-white disabled:opacity-60">
+            {saving ? "সেভ হচ্ছে…" : form.id ? "আপডেট করুন" : "যোগ করুন"}
+          </button>
+          {form.id && (
+            <button type="button" onClick={() => setForm(emptyLive)} className="rounded-xl border-2 border-[var(--color-redpen)] px-3 font-display font-bold text-[var(--color-redpen)]">
+              বাতিল
+            </button>
+          )}
+        </div>
+      </form>
+
+      <div>
+        <h3 className="font-display text-lg font-bold text-[var(--color-ink)]">লাইভ পরীক্ষার তালিকা {list ? `(${list.length}টি)` : ""}</h3>
+        {list === null ? (
+          <Loader label="লোড হচ্ছে…" />
+        ) : (
+          <div className="mt-3 space-y-2">
+            {list.length === 0 && <p className="text-sm text-[var(--color-text)]/60">এখনো কোনো লাইভ পরীক্ষা যোগ করা হয়নি।</p>}
+            {list.map((ex) => {
+              const state = now < new Date(ex.start) ? ["শুরু হয়নি", "bg-[var(--color-marigold)]/20 text-[var(--color-marigold-dark)]"] : now > new Date(ex.end) ? ["শেষ", "bg-[var(--color-text)]/10 text-[var(--color-text)]/60"] : ["চলছে", "bg-[var(--color-greenpen)]/15 text-[var(--color-greenpen)]"];
+              return (
+                <div key={ex.id} className="rounded-lg border border-[var(--color-paper-line)] bg-white/70 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-display font-bold text-[var(--color-ink)]">{ex.title}</p>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${state[1]}`}>{state[0]}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--color-text)]/65">
+                    {fmtBn_(ex.start)} → {fmtBn_(ex.end)} · {ex.minutes} মিনিট
+                  </p>
+                  <div className="mt-2 flex gap-3">
+                    <button onClick={() => startEdit(ex)} className="text-xs font-bold text-[var(--color-bluepen)] underline">এডিট</button>
+                    <button disabled={busyId === ex.id} onClick={() => remove(ex.id)} className="text-xs font-bold text-[var(--color-redpen)] underline disabled:opacity-50">মুছুন</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

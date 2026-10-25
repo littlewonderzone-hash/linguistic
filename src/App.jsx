@@ -7,7 +7,6 @@ import StudentLogin from "./pages/StudentLogin";
 import StudentPortal from "./pages/StudentPortal";
 import Contact from "./pages/Contact";
 import WrittenTest from "./pages/WrittenTest";
-import SpellingTest from "./pages/SpellingTest";
 import LiveExam from "./pages/LiveExam";
 import Leaderboard from "./pages/Leaderboard";
 import AdminLogin from "./pages/admin/AdminLogin";
@@ -37,7 +36,6 @@ export default function App() {
 
         {/* পরীক্ষার পেজ ইচ্ছাকৃতভাবে সাইট হেডার/ফুটার ছাড়া — ফুলস্ক্রিন এক্সাম মোডের জন্য */}
         <Route path="/exam/written" element={<WrittenTest />} />
-        <Route path="/exam/spelling" element={<SpellingTest />} />
         <Route path="/exam/live" element={<LiveExam />} />
 
         {/* অ্যাডমিন প্যানেল — মূল সাইটের সাথে কোনো লিংক/নেভিগেশন নেই */}

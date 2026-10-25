@@ -27,14 +27,17 @@ const CONTACT_HEADERS = ["id", "email", "phone", "message", "status", "createdAt
 
 const WRITTEN_QUESTION_HEADERS = [
   "id", "passageHtml", "questionsJson", "kind", "status",
-  "forMock", "forLive", "createdAt", "passageImageUrl",
+  "forMock", "forLive", "createdAt", "passageImageUrl", "liveExamId",
 ];
+
+// একাধিক লাইভ পরীক্ষা — প্রতিটার নিজস্ব নাম, শুরু/শেষের উইন্ডো (ISO সময়) ও পরীক্ষার সময়কাল (মিনিট)
+const LIVE_EXAM_HEADERS = ["id", "title", "start", "end", "minutes", "createdAt"];
 
 const WRITTEN_ATTEMPT_HEADERS = [
   "id", "registrationId", "phone", "email", "examType", "kind", "sessionId",
   "writtenQuestionId", "subQuestionId", "subQuestionText", "points", "imageUrl",
   "status", "score", "annotatedImageUrl", "adminComment", "createdAt", "gradedAt",
-  "subQuestionImageUrl",
+  "subQuestionImageUrl", "liveExamId",
 ];
 
 const BENGALI_ORDINALS = [
@@ -70,16 +73,15 @@ function setup() {
     settingsSheet.appendRow(["discountDeadline", ""]);
     settingsSheet.appendRow(["courseImageUrl", ""]);
     settingsSheet.appendRow(["maintenanceMode", "FALSE"]);
-    settingsSheet.appendRow(["liveExamStart", ""]);
-    settingsSheet.appendRow(["liveExamEnd", ""]);
+    settingsSheet.appendRow(["writtenMinutes", "25"]);
+    settingsSheet.appendRow(["setsPerExam", "3"]);
     settingsSheet.appendRow(["logoUrl", ""]);
     settingsSheet.appendRow(["offlineWrittenLastUsed", "[]"]);
-    settingsSheet.appendRow(["offlineSpellingLastUsed", "[]"]);
     settingsSheet.setFrozenRows(1);
   } else {
     ensureSettingsKeys_(settingsSheet, [
-      "liveExamStart", "liveExamEnd", "logoUrl",
-      "offlineWrittenLastUsed", "offlineSpellingLastUsed",
+      "writtenMinutes", "setsPerExam", "logoUrl",
+      "offlineWrittenLastUsed",
     ]);
   }
 
@@ -102,6 +104,10 @@ function setup() {
   let writtenQSheet = ss.getSheetByName("WrittenQuestions");
   if (!writtenQSheet) writtenQSheet = ss.insertSheet("WrittenQuestions");
   ensureHeaders_(writtenQSheet, WRITTEN_QUESTION_HEADERS);
+
+  let liveSheet = ss.getSheetByName("LiveExams");
+  if (!liveSheet) liveSheet = ss.insertSheet("LiveExams");
+  ensureHeaders_(liveSheet, LIVE_EXAM_HEADERS);
 
   let writtenASheet = ss.getSheetByName("WrittenAttempts");
   if (!writtenASheet) writtenASheet = ss.insertSheet("WrittenAttempts");
@@ -410,42 +416,72 @@ function shuffleArray_(arr) {
   return a;
 }
 
-/* ---------------- লাইভ পরীক্ষার সময়সীমা ---------------- */
+/* ---------------- সেটিংস থেকে লিখিত পরীক্ষার সময় ও সেট সংখ্যা ---------------- */
 
-function isLiveExamOpen_() {
-  const settings = getSettingsObj_();
-  if (!settings.liveExamStart || !settings.liveExamEnd) return { open: false, reason: "লাইভ পরীক্ষার সময় এখনো নির্ধারণ করা হয়নি।" };
-  const now = new Date();
-  const start = new Date(settings.liveExamStart);
-  const end = new Date(settings.liveExamEnd);
-  if (now < start) return { open: false, reason: "লাইভ পরীক্ষা এখনো শুরু হয়নি। শুরু হবে: " + start.toLocaleString("bn-BD") };
-  if (now > end) return { open: false, reason: "লাইভ পরীক্ষার সময় শেষ হয়ে গেছে।" };
-  return { open: true, endsAt: end.toISOString(), startsAt: start.toISOString() };
+function getWrittenMinutes_() {
+  const n = Number(getSettingsObj_().writtenMinutes);
+  return n > 0 ? Math.round(n) : 25;
 }
 
-/**
- * একজন স্টুডেন্ট *বর্তমান* লাইভ পরীক্ষার উইন্ডোতে ইতিমধ্যে অংশ নিয়েছে কিনা
- * চেক করে — "বর্তমান উইন্ডো" মানে liveExamStart-এর পর জমা পড়া কোনো live
- * উত্তরপত্র। অ্যাডমিন নতুন করে liveExamStart/liveExamEnd সেট করলেই (নতুন
- * লাইভ পরীক্ষা), সেটা নতুন উইন্ডো হিসেবে গণ্য হয় এবং স্টুডেন্ট আবার একবার
- * অংশ নিতে পারবে — তাই আলাদা করে "কোন লাইভ পরীক্ষা" ট্র্যাক করার দরকার নেই,
- * শুধু liveExamStart-এর সাথে তুলনা করলেই চলে।
- */
-function hasParticipatedInCurrentLiveExam_(registrationId) {
-  const settings = getSettingsObj_();
-  if (!settings.liveExamStart) return false;
-  const windowStart = new Date(settings.liveExamStart);
-  const attempts = sheetToObjects_(getSheet_("WrittenAttempts")).filter(
-    (a) => String(a.registrationId) === String(registrationId) && a.examType === "live"
+function getSetsPerExam_() {
+  const n = Number(getSettingsObj_().setsPerExam);
+  return n >= 1 ? Math.min(Math.round(n), 50) : 3;
+}
+
+/* ---------------- লাইভ পরীক্ষা (একাধিক, একই দিনেও) ---------------- */
+
+function toIso_(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
+function listLiveExams_() {
+  return sheetToObjects_(getSheet_("LiveExams"))
+    .filter((e) => e.id)
+    .map((e) => ({
+      id: String(e.id),
+      title: e.title || "লাইভ পরীক্ষা",
+      start: toIso_(e.start),
+      end: toIso_(e.end),
+      minutes: Number(e.minutes) > 0 ? Math.round(Number(e.minutes)) : 25,
+    }))
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
+}
+
+function findLiveExam_(id) {
+  return listLiveExams_().find((e) => e.id === String(id)) || null;
+}
+
+/** কোন কোন লাইভ পরীক্ষায় এই স্টুডেন্ট ইতিমধ্যে অংশ নিয়েছে (জমা দিয়েছে) তার আইডির সেট। */
+function participatedLiveExamIds_(registrationId) {
+  const rows = sheetToObjects_(getSheet_("WrittenAttempts")).filter(
+    (a) => String(a.registrationId) === String(registrationId) && a.examType === "live" && a.liveExamId
   );
-  return attempts.some((a) => new Date(a.createdAt) >= windowStart);
+  return new Set(rows.map((a) => String(a.liveExamId)));
 }
 
-/* ---------------- অনুধাবনমূলক পরীক্ষা ও বানান প্রতিযোগিতা ---------------- */
+/** প্রতিটা লাইভ পরীক্ষার অবস্থা: upcoming | open | closed, আর স্টুডেন্ট অংশ নিয়েছে কিনা।
+ *  স্টুডেন্ট প্রতিটা লাইভ পরীক্ষায় একবারই অংশ নিতে পারে, কিন্তু আলাদা আলাদা লাইভ পরীক্ষা
+ *  (একই দিনেও) যতগুলো খুশি নিতে পারে। */
+function liveExamsWithStatus_(registrationId) {
+  const now = new Date();
+  const done = registrationId ? participatedLiveExamIds_(registrationId) : new Set();
+  return listLiveExams_().map((e) => {
+    const start = new Date(e.start);
+    const end = new Date(e.end);
+    let status = "open";
+    if (now < start) status = "upcoming";
+    else if (now > end) status = "closed";
+    return { ...e, status, participated: done.has(e.id) };
+  });
+}
+
+/* ---------------- লিখিত পরীক্ষা ---------------- */
 
 /** একটা প্যাসেজ (উদ্দীপক) একাধিক প্রশ্নসহ যোগ করা হয়। q.subQuestions একটা
  *  অ্যারে: [{text, points, imageUrl?, imageBase64?}, ...]। kind: "written"
- *  (অনুধাবনমূলক) বা "spelling" (বানান প্রতিযোগিতা)। status: "draft" | "published"।
+ *  (লিখিত)। status: "draft" | "published"।
  *
  *  ছবি-প্রশ্ন: অ্যাডমিন উদ্দীপক (passageImageBase64) এবং/অথবা প্রতিটা প্রশ্নের
  *  (sq.imageBase64) জন্য ছবি দিতে পারেন — ছবিগুলো এই স্ক্রিপ্ট যে Google
@@ -482,6 +518,7 @@ function addWrittenQuestion_(q) {
     status: q.status === "published" ? "published" : "draft",
     forMock: q.forMock !== false,
     forLive: !!q.forLive,
+    liveExamId: q.forLive && q.liveExamId ? String(q.liveExamId) : "",
     createdAt: new Date(),
   });
   return id;
@@ -501,20 +538,17 @@ function updateWrittenQuestion_(id, q) {
   sheet.getRange(rowIdx, col("status")).setValue(q.status === "published" ? "published" : "draft");
   sheet.getRange(rowIdx, col("forMock")).setValue(q.forMock !== false);
   sheet.getRange(rowIdx, col("forLive")).setValue(!!q.forLive);
+  sheet.getRange(rowIdx, col("liveExamId")).setValue(q.forLive && q.liveExamId ? String(q.liveExamId) : "");
   return true;
 }
 
-/** ফর্মের তথ্য ঠিক আছে কিনা যাচাই — অনুধাবনমূলকে উদ্দীপকের লেখা, উদ্দীপকের ছবি,
+/** ফর্মের তথ্য ঠিক আছে কিনা যাচাই — লিখিতে উদ্দীপকের লেখা, উদ্দীপকের ছবি,
  *  অথবা অন্তত একটা প্রশ্নের লেখা/ছবি — এর যেকোনো একটা থাকতে হবে (শুধু ছবি দিয়েও
- *  চলবে)। বানান প্রতিযোগিতায় প্রতিটা শব্দ লিখতেই হবে। null ফেরত মানে ঠিক আছে। */
+ *  চলবে)। null ফেরত মানে ঠিক আছে। */
 function validateWrittenQuestion_(q) {
   const subs = q.subQuestions || [];
   if (subs.length === 0) return "অন্তত একটা প্রশ্ন যোগ করুন।";
   const hasText = (html) => String(html || "").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() !== "";
-  if (q.kind === "spelling") {
-    if (subs.some((sq) => !hasText(sq.text))) return "প্রতিটা বানান লিখুন।";
-    return null;
-  }
   const hasPassage = hasText(q.passageHtml) || q.passageImageBase64 || q.passageImageUrl;
   const hasAnySub = subs.some((sq) => hasText(sq.text) || sq.imageBase64 || sq.imageUrl);
   if (!hasPassage && !hasAnySub) return "উদ্দীপক বা প্রশ্নের লেখা অথবা ছবি দিন।";
@@ -534,15 +568,12 @@ function parsedWrittenQuestions_() {
   }));
 }
 
-/** কোনো স্টুডেন্ট এই kind-এ এখন পর্যন্ত কোন কোন প্রশ্ন/শব্দ অ্যাটেম্পট করেছে
- *  তার আইডিগুলো ফেরত দেয় — written-এ পুরো প্যাসেজ (writtenQuestionId) স্তরে,
- *  spelling-এ প্রতিটা শব্দ (subQuestionId) স্তরে। */
-function getAttemptedIds_(registrationId, kind) {
+/** কোনো স্টুডেন্ট এখন পর্যন্ত কোন কোন প্রশ্ন-সেট (প্যাসেজ) অ্যাটেম্পট করেছে তার আইডিগুলো। */
+function getAttemptedIds_(registrationId) {
   const rows = sheetToObjects_(getSheet_("WrittenAttempts")).filter(
-    (a) => String(a.registrationId) === String(registrationId) && a.kind === kind
+    (a) => String(a.registrationId) === String(registrationId)
   );
-  const field = kind === "spelling" ? "subQuestionId" : "writtenQuestionId";
-  return new Set(rows.map((a) => String(a[field])));
+  return new Set(rows.map((a) => String(a.writtenQuestionId)));
 }
 
 /** আগে যা দেওয়া হয়নি সেগুলো থেকে আগে বাছাই করে; পুরো ব্যাংক শেষ হয়ে গেলে
@@ -558,30 +589,20 @@ function pickAvoidingRepeats_(items, needed, attemptedIds, idKey) {
   return picked;
 }
 
-/** kind অনুযায়ী (written/spelling) এবং mock/live অনুযায়ী শুধু published প্রশ্ন
- *  থেকে বাছাই করে। written হলে ৩টা প্যাসেজ, spelling হলে ৫টা শব্দ। registrationId
- *  দেওয়া থাকলে স্টুডেন্টের আগে-না-দেওয়া প্রশ্ন/শব্দকে অগ্রাধিকার দেওয়া হয় —
- *  পুরো ব্যাংক শেষ করলেই আবার শুরু থেকে (রিপিট) চক্র চলে। */
-function getWrittenSets_(examType, kind, registrationId) {
-  const all = parsedWrittenQuestions_().filter(
-    (q) => q.status === "published" && (examType === "live" ? q.forLive : q.forMock) && q.kind === kind
-  );
-  const attemptedIds = registrationId ? getAttemptedIds_(registrationId, kind) : new Set();
-
-  if (kind === "spelling") {
-    const flatItems = [];
-    all.forEach((q) => {
-      (q.subQuestions || []).forEach((sq) => {
-        flatItems.push({ writtenQuestionId: q.id, subQuestionId: sq.id, text: sq.text, points: sq.points });
-      });
-    });
-    const picked = pickAvoidingRepeats_(flatItems, 5, attemptedIds, "subQuestionId");
-    return [{ id: "spelling-set", passageHtml: "", subQuestions: picked.map((p) => ({
-      id: p.subQuestionId, writtenQuestionId: p.writtenQuestionId, text: p.text, points: p.points,
-    })) }];
-  }
-
-  const picked = pickAvoidingRepeats_(all, 3, attemptedIds, "id");
+/** mock/live অনুযায়ী শুধু published প্রশ্ন থেকে (সেটিংসের সেট সংখ্যা অনুযায়ী) প্যাসেজ বাছাই করে।
+ *  registrationId দেওয়া থাকলে স্টুডেন্টের আগে-না-দেওয়া প্রশ্নকে অগ্রাধিকার
+ *  দেওয়া হয় — পুরো ব্যাংক শেষ করলেই আবার শুরু থেকে (রিপিট) চক্র চলে। */
+function getWrittenSets_(examType, registrationId, liveExamId) {
+  const all = parsedWrittenQuestions_().filter((q) => {
+    if (q.status !== "published" || (q.kind || "written") !== "written") return false;
+    if (examType === "live") {
+      // forLive প্রশ্ন: নির্দিষ্ট লাইভ পরীক্ষায় বাঁধা থাকলে শুধু সেটাতেই আসে; বাঁধা না থাকলে সব লাইভ পরীক্ষায়
+      return q.forLive && (!q.liveExamId || String(q.liveExamId) === String(liveExamId));
+    }
+    return q.forMock;
+  });
+  const attemptedIds = registrationId ? getAttemptedIds_(registrationId) : new Set();
+  const picked = pickAvoidingRepeats_(all, getSetsPerExam_(), attemptedIds, "id");
   return picked.map((q) => ({
     id: q.id,
     passageHtml: q.passageHtml,
@@ -621,6 +642,7 @@ function saveWrittenAttempt_(data) {
     subQuestionId: data.subQuestionId,
     subQuestionText: data.subQuestionText,
     subQuestionImageUrl: data.subQuestionImageUrl || "",
+    liveExamId: data.liveExamId || "",
     points: data.points,
     imageUrl: data.imageUrl,
     status: "pending",
@@ -637,10 +659,12 @@ function listWrittenAttemptsForStudent_(registrationId) {
   const rows = sheetToObjects_(getSheet_("WrittenAttempts")).filter(
     (a) => String(a.registrationId) === String(registrationId)
   );
+  const liveTitle = {};
+  listLiveExams_().forEach((e) => (liveTitle[e.id] = e.title));
   const sessions = {};
   rows.forEach((a) => {
     if (!sessions[a.sessionId]) {
-      sessions[a.sessionId] = { sessionId: a.sessionId, examType: a.examType, kind: a.kind, createdAt: a.createdAt, items: [] };
+      sessions[a.sessionId] = { sessionId: a.sessionId, examType: a.examType, kind: a.kind, createdAt: a.createdAt, liveExamTitle: liveTitle[String(a.liveExamId)] || "", items: [] };
     }
     sessions[a.sessionId].items.push(a);
   });
@@ -673,7 +697,7 @@ function gradeWrittenAttempt_(id, score, annotatedImageUrl, adminComment) {
 }
 
 /** একটা পুরো গ্রুপ (একই ছবির সাথে যুক্ত সবগুলো প্রশ্ন — যেমন একটা উদ্দীপকের
- *  সবকটা প্রশ্ন, বা বানানের সবকটা শব্দ) একসাথে মূল্যায়ন করে — প্রতিটার নম্বর
+ *  সবকটা প্রশ্ন) একসাথে মূল্যায়ন করে — প্রতিটার নম্বর
  *  আলাদা, কিন্তু দাগানো ছবি ও মন্তব্য সবগুলোর জন্য একই। */
 function gradeWrittenAttemptsBatch_(items, annotatedImageUrl, adminComment) {
   let count = 0;
@@ -685,13 +709,16 @@ function gradeWrittenAttemptsBatch_(items, annotatedImageUrl, adminComment) {
 
 /* ---------------- র‍্যাঙ্কিং / মেরিট তালিকা ---------------- */
 
-/** মেরিট তালিকা এখন অনুধাবনমূলক পরীক্ষার *মূল্যায়ন শেষ হওয়া* নম্বরের উপর ভিত্তি
+/** মেরিট তালিকা এখন লিখিত পরীক্ষার *মূল্যায়ন শেষ হওয়া* নম্বরের উপর ভিত্তি
  *  করে। একটা পরীক্ষা-সেশনের (sessionId) সবগুলো প্রশ্নের নম্বর দেওয়া হয়ে গেলে
  *  তবেই সেটা তালিকায় ঢোকে; প্রতিটা স্টুডেন্টের সর্বোচ্চ সেশন-স্কোর নেওয়া হয়
- *  (মক টেস্ট বহুবার দেওয়া যায় বলে)। বানান প্রতিযোগিতা এই তালিকায় ধরা হয় না। */
-function getLeaderboard_(examType) {
+ *  (মক টেস্ট বহুবার দেওয়া যায় বলে)। */
+function getLeaderboard_(examType, liveExamId) {
   const rows = sheetToObjects_(getSheet_("WrittenAttempts")).filter(
-    (a) => a.examType === examType && a.kind === "written"
+    (a) =>
+      a.examType === examType &&
+      a.kind === "written" &&
+      (examType !== "live" || !liveExamId || String(a.liveExamId) === String(liveExamId))
   );
   const regs = sheetToObjects_(getSheet_("Registrations"));
   const regById = {};
@@ -867,13 +894,13 @@ function appendDriveImage_(body, url, maxWidth) {
   }
 }
 
-/** অফলাইন অনুধাবনমূলক প্রশ্নপত্র — ৩টা সেট, প্রতিটা আলাদা পাতায়। উদ্দীপক
+/** অফলাইন লিখিত প্রশ্নপত্র — ৩টা সেট, প্রতিটা আলাদা পাতায়। উদ্দীপক
  *  উপরে ছোট ফন্টে, প্রতিটা প্রশ্নের নিচে দাগ না দিয়ে ২ সেন্টিমিটার ফাঁকা
  *  জায়গা রাখা হয় ("উত্তরঃ" লিখে)। */
 function buildOfflineWrittenPdf_() {
   const all = parsedWrittenQuestions_().filter((q) => q.status === "published" && q.forMock && q.kind === "written");
   const recentlyUsed = getRecentlyUsedIds_("offlineWrittenLastUsed");
-  const picked = pickAvoidingRepeats_(all, 3, recentlyUsed, "id");
+  const picked = pickAvoidingRepeats_(all, getSetsPerExam_(), recentlyUsed, "id");
 
   const doc = DocumentApp.create("Offline Written - " + new Date().toISOString());
   const body = doc.getBody();
@@ -881,7 +908,7 @@ function buildOfflineWrittenPdf_() {
 
   picked.forEach((set, si) => {
     if (si > 0) body.appendPageBreak();
-    addPdfHeader_(body, "অনুধাবনমূলক প্রশ্ন", "সময়: ২৫ মিনিট");
+    addPdfHeader_(body, "লিখিত প্রশ্ন", "সময়: " + getWrittenMinutes_() + " মিনিট");
 
     htmlToPlainLines_(set.passageHtml).forEach((line) => {
       body.appendParagraph(line).setFontSize(9.5).setItalic(true).setSpacingBefore(0).setSpacingAfter(1);
@@ -907,33 +934,6 @@ function buildOfflineWrittenPdf_() {
 
   saveRecentlyUsedIds_("offlineWrittenLastUsed", picked.map((q) => q.id));
   return { base64: docToBase64Pdf_(doc), filename: "Agrodut-Onudhabonmulok-" + Date.now() + ".pdf" };
-}
-
-/** অফলাইন বানান প্রতিযোগিতার প্রশ্নপত্র — ৫টা বানান একই পাতায়, প্রতিটার নিচে
- *  দাগ না দিয়ে ২ সেন্টিমিটার ফাঁকা জায়গা রাখা হয়। */
-function buildOfflineSpellingPdf_() {
-  const all = parsedWrittenQuestions_().filter((q) => q.status === "published" && q.forMock && q.kind === "spelling");
-  const flatItems = [];
-  all.forEach((q) => {
-    (q.subQuestions || []).forEach((sq) => {
-      flatItems.push({ id: sq.id, text: sq.text, points: sq.points });
-    });
-  });
-  const recentlyUsed = getRecentlyUsedIds_("offlineSpellingLastUsed");
-  const picked = pickAvoidingRepeats_(flatItems, 5, recentlyUsed, "id");
-
-  const doc = DocumentApp.create("Offline Spelling - " + new Date().toISOString());
-  const body = doc.getBody();
-  body.setMarginTop(20).setMarginBottom(20).setMarginLeft(30).setMarginRight(30);
-  addPdfHeader_(body, "বিভাগীয় সেরা ২০ বানান প্রতিযোগিতা", "প্রশ্ন সংখ্যা: ৫টি · সময়: ২০ মিনিট");
-
-  picked.forEach((sq, i) => {
-    body.appendParagraph(`${i + 1}. ${sq.text}   (${sq.points} নম্বর)`).setFontSize(10.5).setSpacingBefore(6).setSpacingAfter(2);
-    body.appendParagraph("উত্তরঃ").setFontSize(9.5).setSpacingBefore(0).setSpacingAfter(CM_TO_PT * 2);
-  });
-
-  saveRecentlyUsedIds_("offlineSpellingLastUsed", picked.map((sq) => sq.id));
-  return { base64: docToBase64Pdf_(doc), filename: "Agrodut-Banan-" + Date.now() + ".pdf" };
 }
 
 /* ---------------- HTTP entry points ---------------- */
@@ -1108,66 +1108,95 @@ function doPost(e) {
       /* ---------- লাইভ পরীক্ষার সময় ---------- */
 
       case "liveExamStatus": {
-        const status = isLiveExamOpen_();
-        if (status.open && body.token) {
+        let regId = "";
+        if (body.token) {
           const reg = findRegistrationByStudentToken_(body.token);
-          if (reg && hasParticipatedInCurrentLiveExam_(reg.id)) {
-            status.alreadyParticipated = true;
-          }
+          if (reg) regId = reg.id;
         }
-        return jsonOut_({ ok: true, data: status });
+        return jsonOut_({ ok: true, data: { exams: liveExamsWithStatus_(regId) } });
       }
 
-      /* ---------- স্টুডেন্ট: অনুধাবনমূলক / বানান পরীক্ষা ---------- */
+      /* ---------- স্টুডেন্ট: লিখিত পরীক্ষা ---------- */
 
       case "startWrittenExam": {
         const reg = findRegistrationByStudentToken_(body.token);
         if (!reg) return jsonOut_({ ok: false, message: "Unauthorized — আবার লগইন করুন।" });
         if (reg.status !== "confirmed") return jsonOut_({ ok: false, message: "আপনার রেজিস্ট্রেশন এখনও কনফার্ম হয়নি।" });
         const examType = body.examType === "live" ? "live" : "mock";
+        let minutes = getWrittenMinutes_();
+        let liveExamId = "";
         if (examType === "live") {
-          const win = isLiveExamOpen_();
-          if (!win.open) return jsonOut_({ ok: false, message: win.reason });
+          const live = findLiveExam_(body.liveExamId);
+          if (!live) return jsonOut_({ ok: false, message: "এই লাইভ পরীক্ষাটি পাওয়া যায়নি।" });
+          const now = new Date();
+          if (now < new Date(live.start)) return jsonOut_({ ok: false, message: "\"" + live.title + "\" এখনো শুরু হয়নি।" });
+          if (now > new Date(live.end)) return jsonOut_({ ok: false, message: "\"" + live.title + "\"-এর সময় শেষ হয়ে গেছে।" });
+          if (participatedLiveExamIds_(reg.id).has(live.id)) {
+            return jsonOut_({ ok: false, message: "আপনি ইতিমধ্যে \"" + live.title + "\"-এ অংশ নিয়েছেন। একটা লাইভ পরীক্ষায় একবারই অংশ নেওয়া যায়।" });
+          }
+          minutes = live.minutes;
+          liveExamId = live.id;
         }
-        const sets = getWrittenSets_(examType, body.kind === "spelling" ? "spelling" : "written", reg.id);
+        const sets = getWrittenSets_(examType, reg.id, liveExamId);
         if (sets.length === 0 || sets.every((s) => (s.subQuestions || []).length === 0)) {
           return jsonOut_({ ok: false, message: "এখনো কোনো প্রশ্ন প্রকাশ করা হয়নি। পরে আবার চেষ্টা করুন।" });
         }
-        return jsonOut_({ ok: true, data: { sessionId: Utilities.getUuid(), sets } });
+        return jsonOut_({ ok: true, data: { sessionId: Utilities.getUuid(), sets, minutes, liveExamId } });
       }
 
       case "submitWrittenAnswer": {
         const reg = findRegistrationByStudentToken_(body.token);
         if (!reg) return jsonOut_({ ok: false, message: "Unauthorized — আবার লগইন করুন।" });
         if (!body.imageBase64) return jsonOut_({ ok: false, message: "ছবি পাওয়া যায়নি।" });
+        if (body.examType === "live") {
+          if (!body.liveExamId) return jsonOut_({ ok: false, message: "লাইভ পরীক্ষার তথ্য পাওয়া যায়নি।" });
+          const priorSession = sheetToObjects_(getSheet_("WrittenAttempts")).find(
+            (a) =>
+              String(a.registrationId) === String(reg.id) &&
+              a.examType === "live" &&
+              String(a.liveExamId) === String(body.liveExamId) &&
+              String(a.sessionId) !== String(body.sessionId)
+          );
+          if (priorSession) return jsonOut_({ ok: false, message: "আপনি এই লাইভ পরীক্ষায় ইতিমধ্যে অংশ নিয়েছেন।" });
+        }
         const imageUrl = uploadImageToDrive_(body.imageBase64, body.mimeType, "answer_" + Utilities.getUuid() + ".jpg");
         const id = saveWrittenAttempt_({
           registrationId: reg.id,
           phone: reg.phone,
           email: reg.email,
           examType: body.examType || "mock",
-          kind: body.kind === "spelling" ? "spelling" : "written",
+          kind: "written",
           sessionId: body.sessionId,
           writtenQuestionId: body.writtenQuestionId,
           subQuestionId: body.subQuestionId,
           subQuestionText: body.subQuestionText,
           subQuestionImageUrl: body.subQuestionImageUrl,
+          liveExamId: body.liveExamId,
           points: body.points,
           imageUrl,
         });
         return jsonOut_({ ok: true, data: { id, imageUrl } });
       }
 
-      /** বানান প্রতিযোগিতার জন্য — একটামাত্র ছবি (সব কয়টা শব্দের উত্তর একসাথে
-       *  একই পৃষ্ঠায়) একবারই Drive-এ আপলোড হয়, তারপর প্রতিটা শব্দের জন্য
-       *  আলাদা আলাদা WrittenAttempts সারি তৈরি হয় (সবগুলো একই ছবির লিংক শেয়ার
-       *  করে) — যাতে প্রতিটা শব্দ আলাদাভাবে ট্র্যাক/মূল্যায়ন করা যায়, কিন্তু
-       *  ছবি বারবার আপলোড করতে না হয় (দ্রুত হওয়ার জন্য)। */
+      /** একটা উদ্দীপকের সবগুলো প্রশ্নের উত্তর একটামাত্র ছবিতে — ছবি একবারই Drive-এ আপলোড হয়,
+       *  তারপর প্রতিটা প্রশ্নের জন্য আলাদা WrittenAttempts সারি তৈরি হয় (সবগুলো একই ছবির লিংক
+       *  শেয়ার করে), যাতে প্রতিটা প্রশ্ন আলাদাভাবে মূল্যায়ন করা যায়। */
       case "submitWrittenAnswersBatch": {
         const reg = findRegistrationByStudentToken_(body.token);
         if (!reg) return jsonOut_({ ok: false, message: "Unauthorized — আবার লগইন করুন।" });
         if (!body.imageBase64) return jsonOut_({ ok: false, message: "ছবি পাওয়া যায়নি।" });
         if (!body.items || body.items.length === 0) return jsonOut_({ ok: false, message: "কোনো প্রশ্ন পাওয়া যায়নি।" });
+        if (body.examType === "live") {
+          if (!body.liveExamId) return jsonOut_({ ok: false, message: "লাইভ পরীক্ষার তথ্য পাওয়া যায়নি।" });
+          const priorSession = sheetToObjects_(getSheet_("WrittenAttempts")).find(
+            (a) =>
+              String(a.registrationId) === String(reg.id) &&
+              a.examType === "live" &&
+              String(a.liveExamId) === String(body.liveExamId) &&
+              String(a.sessionId) !== String(body.sessionId)
+          );
+          if (priorSession) return jsonOut_({ ok: false, message: "আপনি এই লাইভ পরীক্ষায় ইতিমধ্যে অংশ নিয়েছেন।" });
+        }
         const imageUrl = uploadImageToDrive_(body.imageBase64, body.mimeType, "answer_" + Utilities.getUuid() + ".jpg");
         const ids = body.items.map((item) =>
           saveWrittenAttempt_({
@@ -1175,12 +1204,13 @@ function doPost(e) {
             phone: reg.phone,
             email: reg.email,
             examType: body.examType || "mock",
-            kind: body.kind === "spelling" ? "spelling" : "written",
+            kind: "written",
             sessionId: body.sessionId,
             writtenQuestionId: item.writtenQuestionId,
             subQuestionId: item.subQuestionId,
             subQuestionText: item.subQuestionText,
             subQuestionImageUrl: item.subQuestionImageUrl,
+            liveExamId: body.liveExamId,
             points: item.points,
             imageUrl,
           })
@@ -1196,10 +1226,10 @@ function doPost(e) {
 
       case "leaderboard": {
         const examType = body.examType === "live" ? "live" : "mock";
-        return jsonOut_({ ok: true, data: getLeaderboard_(examType) });
+        return jsonOut_({ ok: true, data: getLeaderboard_(examType, body.liveExamId) });
       }
 
-      /* ---------- অ্যাডমিন: অনুধাবনমূলক/বানান প্রশ্ন ব্যাংক ---------- */
+      /* ---------- অ্যাডমিন: লিখিত প্রশ্ন ব্যাংক ---------- */
 
       case "adminAddWrittenQuestion": {
         if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
@@ -1262,11 +1292,53 @@ function doPost(e) {
         return jsonOut_({ ok: true, data: { count } });
       }
 
+      /* ---------- অ্যাডমিন: লাইভ পরীক্ষা তৈরি/এডিট/মোছা ---------- */
+
+      case "adminListLiveExams": {
+        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
+        return jsonOut_({ ok: true, data: listLiveExams_() });
+      }
+
+      case "adminSaveLiveExam": {
+        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
+        const start = toIso_(body.start);
+        const end = toIso_(body.end);
+        if (!start || !end) return jsonOut_({ ok: false, message: "শুরু ও শেষের তারিখ-সময় দিন।" });
+        if (new Date(end) <= new Date(start)) return jsonOut_({ ok: false, message: "শেষের সময় শুরুর সময়ের পরে হতে হবে।" });
+        const minutes = Math.round(Number(body.minutes));
+        if (!(minutes > 0)) return jsonOut_({ ok: false, message: "পরীক্ষার সময়কাল (মিনিট) দিন।" });
+        const title = String(body.title || "").trim() || "লাইভ পরীক্ষা";
+        const sheet = getSheet_("LiveExams");
+        if (body.id) {
+          const rowIdx = findRowIndexById_(sheet, body.id);
+          if (rowIdx === -1) return jsonOut_({ ok: false, message: "লাইভ পরীক্ষা পাওয়া যায়নি" });
+          const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+          const col = (n) => headerRow.indexOf(n) + 1;
+          sheet.getRange(rowIdx, col("title")).setValue(title);
+          sheet.getRange(rowIdx, col("start")).setValue(start);
+          sheet.getRange(rowIdx, col("end")).setValue(end);
+          sheet.getRange(rowIdx, col("minutes")).setValue(minutes);
+          return jsonOut_({ ok: true, data: { id: body.id } });
+        }
+        const id = Utilities.getUuid();
+        appendRowByHeaders_(sheet, { id, title, start, end, minutes, createdAt: new Date() });
+        return jsonOut_({ ok: true, data: { id } });
+      }
+
+      case "adminDeleteLiveExam": {
+        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
+        const sheet = getSheet_("LiveExams");
+        const rowIdx = findRowIndexById_(sheet, body.id);
+        if (rowIdx === -1) return jsonOut_({ ok: false, message: "লাইভ পরীক্ষা পাওয়া যায়নি" });
+        sheet.deleteRow(rowIdx);
+        return jsonOut_({ ok: true });
+      }
+
       /* ---------- অ্যাডমিন: লাইভ ফলাফল ---------- */
 
       case "adminLiveResults": {
         if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
-        return jsonOut_({ ok: true, data: getLeaderboard_("live") });
+        return jsonOut_({ ok: true, data: getLeaderboard_("live", body.liveExamId) });
       }
 
       /* ---------- অ্যাডমিন: অফলাইন প্রশ্নপত্র (PDF) ---------- */
@@ -1275,15 +1347,6 @@ function doPost(e) {
         if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
         try {
           return jsonOut_({ ok: true, data: buildOfflineWrittenPdf_() });
-        } catch (err) {
-          return jsonOut_({ ok: false, message: "PDF তৈরি করা যায়নি: " + String(err) });
-        }
-      }
-
-      case "adminGenerateOfflineSpelling": {
-        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
-        try {
-          return jsonOut_({ ok: true, data: buildOfflineSpellingPdf_() });
         } catch (err) {
           return jsonOut_({ ok: false, message: "PDF তৈরি করা যায়নি: " + String(err) });
         }

@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import Loader from "../components/Loader";
 
 const EXAM_TYPE_LABEL = { mock: "মক টেস্ট", live: "লাইভ টেস্ট" };
-const KIND_LABEL = { written: "অনুধাবনমূলক পরীক্ষা", spelling: "বানান প্রতিযোগিতা" };
+const KIND_LABEL = { written: "লিখিত পরীক্ষা" };
 
 export default function StudentPortal() {
   const [profile, setProfile] = useState(null);
@@ -78,9 +78,8 @@ export default function StudentPortal() {
         )}
 
         <h2 className="font-display font-bold text-[var(--color-ink)]">পরীক্ষা কেন্দ্র</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <ExamCard title="অনুধাবনমূলক পরীক্ষা" enabled={confirmed} to="/exam/written" />
-          <ExamCard title="বিভাগীয় সেরা ২০ বানান প্রতিযোগিতা" enabled={confirmed} to="/exam/spelling" />
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <ExamCard title="লিখিত পরীক্ষা" enabled={confirmed} to="/exam/written" />
           <ExamCard title="লাইভ পরীক্ষা" enabled={confirmed} to="/exam/live" />
         </div>
 
@@ -129,7 +128,7 @@ function WrittenResultsList({ sessions }) {
               className="flex w-full items-center justify-between px-3 py-3 text-left"
             >
               <span className="font-semibold text-[var(--color-ink)]">
-                {label} <span className="text-xs font-normal text-[var(--color-text)]/50">({EXAM_TYPE_LABEL[session.examType] || session.examType})</span>
+                {label} <span className="text-xs font-normal text-[var(--color-text)]/50">({session.examType === "live" && session.liveExamTitle ? session.liveExamTitle : EXAM_TYPE_LABEL[session.examType] || session.examType})</span>
               </span>
               <span className="flex items-center gap-2">
                 {graded ? (

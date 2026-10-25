@@ -27,67 +27,81 @@ function useCountdown(endsAt) {
   return left;
 }
 
+const fmt = (iso) =>
+  new Date(iso).toLocaleString("bn-BD", { day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
+
+const STATUS = {
+  open: { label: "চলছে", cls: "bg-[var(--color-greenpen)]/15 text-[var(--color-greenpen)]" },
+  upcoming: { label: "শুরু হয়নি", cls: "bg-[var(--color-marigold)]/20 text-[var(--color-marigold-dark)]" },
+  closed: { label: "শেষ", cls: "bg-[var(--color-text)]/10 text-[var(--color-text)]/60" },
+  done: { label: "অংশ নিয়েছেন ✓", cls: "bg-[var(--color-bluepen)]/15 text-[var(--color-bluepen)]" },
+};
+
 export default function LiveExam() {
   const token = localStorage.getItem("linguistic_student_token");
-  const [checking, setChecking] = useState(true);
-  const [status, setStatus] = useState(null);
-  const [step, setStep] = useState("intro"); // intro -> written -> finished
-  const countdown = useCountdown(status?.endsAt);
+  const [exams, setExams] = useState(null);
+  const [selected, setSelected] = useState(null); // বেছে নেওয়া লাইভ পরীক্ষা
+  const [step, setStep] = useState("list"); // list -> intro -> written -> finished
+  const countdown = useCountdown(selected?.end);
 
   useEffect(() => {
-    api.liveExamStatus(token).then((res) => {
-      setStatus(res.ok ? res.data : { open: false, reason: "যাচাই করা যায়নি।" });
-      setChecking(false);
-    });
-  }, [token]);
+    api.liveExamStatus(token).then((res) => setExams(res.ok ? res.data.exams || [] : []));
+  }, [token, step]);
 
-  if (checking) return <Loader full label="লাইভ পরীক্ষার সময় যাচাই হচ্ছে…" />;
+  if (exams === null) return <Loader full label="লাইভ পরীক্ষার তালিকা লোড হচ্ছে…" />;
 
-  if (!status?.open) {
+  /* ===== পরীক্ষা চলছে ===== */
+  if (step === "written" && selected) {
+    return <WrittenExamRunner examType="live" kind="written" liveExamId={selected.id} onFinished={() => setStep("finished")} />;
+  }
+
+  /* ===== শেষ ===== */
+  if (step === "finished") {
     return (
       <div className="mx-auto max-w-md px-4 py-16 text-center">
-        <p className="font-display text-lg font-bold text-[var(--color-ink)]">লাইভ পরীক্ষা এখন চালু নেই</p>
-        <p className="mt-2 rounded-lg bg-[var(--color-marigold)]/10 px-4 py-3 text-sm text-[var(--color-marigold-dark)]">
-          {status?.reason}
+        <p className="font-display text-2xl font-bold text-[var(--color-greenpen)]">লাইভ পরীক্ষা সম্পন্ন হয়েছে ✓</p>
+        <p className="mt-2 text-sm text-[var(--color-text)]/70">
+          আপনার খাতা মূল্যায়নের অপেক্ষায় আছে। মূল্যায়নের পর ফলাফল পোর্টালে দেখা যাবে এবং লাইভ পরীক্ষার মেরিট তালিকাও
+          পোর্টাল থেকে দেখতে পারবেন।
         </p>
-        <Link to="/student" className="mt-6 inline-block rounded-xl bg-[var(--color-ink)] px-6 py-3 font-display font-bold text-white">
-          পোর্টালে ফিরুন
-        </Link>
+        <div className="mt-6 flex flex-col gap-2">
+          <button
+            onClick={() => {
+              setSelected(null);
+              setStep("list");
+            }}
+            className="rounded-xl bg-[var(--color-redpen)] px-6 py-3 font-display font-bold text-white"
+          >
+            আরেকটা লাইভ পরীক্ষা দেখুন
+          </button>
+          <Link to="/student" className="rounded-xl bg-[var(--color-ink)] px-6 py-3 font-display font-bold text-white">
+            পোর্টালে ফিরুন
+          </Link>
+        </div>
       </div>
     );
   }
 
-  if (status.alreadyParticipated) {
-    return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center">
-        <p className="font-display text-lg font-bold text-[var(--color-ink)]">আপনি ইতিমধ্যে অংশ নিয়েছেন</p>
-        <p className="mt-2 rounded-lg bg-[var(--color-marigold)]/10 px-4 py-3 text-sm text-[var(--color-marigold-dark)]">
-          আপনি ইতিমধ্যে এই লাইভ পরীক্ষায় অংশ নিয়েছেন — একটা লাইভ পরীক্ষায় শুধু একবারই অংশ নেওয়া যায়।
-          পরবর্তী লাইভ পরীক্ষায় আবার অংশ নিতে পারবেন।
-        </p>
-        <Link to="/student" className="mt-6 inline-block rounded-xl bg-[var(--color-ink)] px-6 py-3 font-display font-bold text-white">
-          পোর্টালে ফিরুন
-        </Link>
-      </div>
-    );
-  }
-
-  if (step === "intro") {
+  /* ===== নিয়মাবলি (একটা পরীক্ষা বাছার পর) ===== */
+  if (step === "intro" && selected) {
     return (
       <div className="mx-auto max-w-lg px-4 py-12">
-        <h1 className="font-display text-2xl font-bold text-[var(--color-ink)]">লাইভ পরীক্ষা</h1>
+        <button onClick={() => setStep("list")} className="mb-3 text-sm font-bold text-[var(--color-bluepen)] underline">
+          ← তালিকায় ফিরুন
+        </button>
+        <h1 className="font-display text-2xl font-bold text-[var(--color-ink)]">{selected.title}</h1>
 
         <div className="mt-4 rounded-xl border border-[var(--color-redpen)]/30 bg-[var(--color-redpen)]/10 p-4 text-center">
-          <p className="text-xs font-semibold text-[var(--color-redpen)]">লাইভ পরীক্ষার সময় বাকি আছে</p>
+          <p className="text-xs font-semibold text-[var(--color-redpen)]">এই লাইভ পরীক্ষায় ঢোকার সময় বাকি আছে</p>
           <p className="font-display text-3xl font-extrabold tabular-nums text-[var(--color-redpen)]">{countdown}</p>
         </div>
 
         <div className="mt-4 rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
           <p className="mb-2 font-display font-bold text-[var(--color-ink)]">নিয়মাবলি</p>
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-[var(--color-text)]/80">
-            <li>পরীক্ষাটি অনুধাবনমূলক — ২৫ মিনিট, খাতায় লিখে উত্তরের ছবি তুলে জমা দিতে হবে</li>
+            <li>এটা লিখিত পরীক্ষা — সময় {selected.minutes} মিনিট, খাতায় লিখে উত্তরের ছবি তুলে জমা দিতে হবে</li>
             <li>প্রশ্ন লেখা, ছবি, অথবা দুটোই হতে পারে — ছবির প্রশ্ন ভালোভাবে দেখে নিন</li>
-            <li>একবার শুরু করলে মাঝপথে থামানো যাবে না — নিশ্চিত হয়ে "পরীক্ষা শুরু করুন" চাপুন</li>
+            <li>একটা লাইভ পরীক্ষায় একবারই অংশ নেওয়া যায়; একবার শুরু করলে মাঝপথে থামানো যাবে না</li>
             <li>ইন্টারনেট সংযোগ স্থিতিশীল আছে কিনা নিশ্চিত করে নিন</li>
           </ul>
         </div>
@@ -102,24 +116,55 @@ export default function LiveExam() {
     );
   }
 
-  if (step === "finished") {
-    return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center">
-        <p className="font-display text-2xl font-bold text-[var(--color-greenpen)]">লাইভ পরীক্ষা সম্পন্ন হয়েছে ✓</p>
-        <p className="mt-2 text-sm text-[var(--color-text)]/70">
-          আপনার খাতা মূল্যায়নের অপেক্ষায় আছে। মূল্যায়নের পর ফলাফল পোর্টালে দেখা যাবে এবং
-          লাইভ পরীক্ষার মেরিট তালিকাও পোর্টাল থেকে দেখতে পারবেন।
-        </p>
-        <Link to="/student" className="mt-6 inline-block rounded-xl bg-[var(--color-ink)] px-6 py-3 font-display font-bold text-white">
-          পোর্টালে ফিরুন
-        </Link>
+  /* ===== লাইভ পরীক্ষার তালিকা ===== */
+  // এখন চলছে → শুরু হবে → শেষ, আর যেগুলোতে অংশ নেওয়া হয়ে গেছে সেগুলো আলাদা চিহ্নে
+  const order = { open: 0, upcoming: 1, closed: 2 };
+  const sorted = [...exams].sort((a, b) => order[a.status] - order[b.status] || new Date(a.start) - new Date(b.start));
+
+  return (
+    <div className="mx-auto max-w-lg px-4 py-12">
+      <h1 className="font-display text-2xl font-bold text-[var(--color-ink)]">লাইভ পরীক্ষা</h1>
+      <p className="mt-1 text-sm text-[var(--color-text)]/70">
+        প্রতিটা লাইভ পরীক্ষায় একবার অংশ নেওয়া যায়। একই দিনে একাধিক লাইভ পরীক্ষা থাকলে সবগুলোতেই অংশ নিতে পারবেন।
+      </p>
+
+      <div className="mt-5 space-y-3">
+        {sorted.length === 0 && (
+          <p className="rounded-lg bg-[var(--color-marigold)]/10 px-4 py-3 text-sm text-[var(--color-marigold-dark)]">
+            এখনো কোনো লাইভ পরীক্ষার সময় নির্ধারণ করা হয়নি।
+          </p>
+        )}
+        {sorted.map((e) => {
+          const st = e.participated ? STATUS.done : STATUS[e.status];
+          const canStart = e.status === "open" && !e.participated;
+          return (
+            <div key={e.id} className="rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-display text-lg font-bold text-[var(--color-ink)]">{e.title}</p>
+                <span className={`shrink-0 rounded-full px-3 py-0.5 text-xs font-bold ${st.cls}`}>{st.label}</span>
+              </div>
+              <p className="mt-1 text-xs text-[var(--color-text)]/65">
+                {fmt(e.start)} থেকে {fmt(e.end)} পর্যন্ত · সময় {e.minutes} মিনিট
+              </p>
+              {canStart && (
+                <button
+                  onClick={() => {
+                    setSelected(e);
+                    setStep("intro");
+                  }}
+                  className="mt-3 w-full rounded-lg bg-[var(--color-redpen)] px-4 py-2 font-display text-sm font-bold text-white"
+                >
+                  এই পরীক্ষায় অংশ নিন
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
-    );
-  }
 
-  if (step === "written") {
-    return <WrittenExamRunner examType="live" kind="written" onFinished={() => setStep("finished")} />;
-  }
-
-  return null;
+      <Link to="/student" className="mt-8 inline-block rounded-xl bg-[var(--color-ink)] px-6 py-3 font-display font-bold text-white">
+        পোর্টালে ফিরুন
+      </Link>
+    </div>
+  );
 }
