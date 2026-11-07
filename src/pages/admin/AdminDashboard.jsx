@@ -5,6 +5,7 @@ import Loader from "../../components/Loader";
 import RichTextEditor from "../../components/RichTextEditor";
 import GradingCanvas from "../../components/GradingCanvas";
 import { fileToDataUrl, compressImage } from "../../lib/image";
+import ZoomImage from "../../components/ZoomImage";
 
 function useAdminToken() {
   const navigate = useNavigate();
@@ -17,7 +18,7 @@ function useAdminToken() {
 
 export default function AdminDashboard() {
   const token = useAdminToken();
-  const [tab, setTab] = useState("registrations");
+  const [tab, setTab] = useState("stats");
   const navigate = useNavigate();
 
   function logout() {
@@ -39,6 +40,7 @@ export default function AdminDashboard() {
       <div className="mx-auto max-w-4xl px-4 py-6">
         <div className="flex flex-wrap gap-2">
           {[
+            ["stats", "ড্যাশবোর্ড"],
             ["registrations", "রেজিস্ট্রেশন"],
             ["writtenQuestions", "প্রশ্ন (লেখা/ছবি)"],
             ["grading", "খাতা মূল্যায়ন"],
@@ -62,6 +64,7 @@ export default function AdminDashboard() {
         </div>
 
         <div className="mt-6">
+          {tab === "stats" && <AdminStats token={token} />}
           {tab === "registrations" && <Registrations token={token} />}
           {tab === "writtenQuestions" && <WrittenQuestions token={token} />}
           {tab === "grading" && <Grading token={token} />}
@@ -71,6 +74,130 @@ export default function AdminDashboard() {
           {tab === "contacts" && <Contacts token={token} />}
           {tab === "offline" && <OfflineExams token={token} />}
           {tab === "settings" && <Settings token={token} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** ব্রাউজারে CSV বানিয়ে ডাউনলোড (UTF-8 BOM সহ — Excel-এ বাংলা ঠিকঠাক খোলে) */
+function downloadCsv(filename, headers, rows) {
+  const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = [headers.map(cell).join(","), ...rows.map((r) => r.map(cell).join(","))].join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function StatCard({ label, value, tone = "ink", hint }) {
+  const cls = {
+    ink: "border-[var(--color-ink)] text-[var(--color-ink)]",
+    warn: "border-[var(--color-marigold)] text-[var(--color-marigold-dark)]",
+    good: "border-[var(--color-greenpen)] text-[var(--color-greenpen)]",
+  }[tone];
+  return (
+    <div className={`rounded-xl border-2 bg-white p-4 ${cls}`}>
+      <p className="font-display text-3xl font-extrabold tabular-nums">{value}</p>
+      <p className="text-xs font-semibold text-[var(--color-text)]/70">{label}</p>
+      {hint && <p className="mt-0.5 text-[10px] text-[var(--color-text)]/50">{hint}</p>}
+    </div>
+  );
+}
+
+function AdminStats({ token }) {
+  const [stats, setStats] = useState(null);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    api.adminStats(token).then((res) => setStats(res.ok ? res.data : {}));
+  }, [token]);
+
+  async function exportResults() {
+    setExporting(true);
+    const res = await api.adminResultsExport(token);
+    setExporting(false);
+    if (!res.ok) return;
+    downloadCsv(
+      `linguistic-results-${new Date().toISOString().slice(0, 10)}.csv`,
+      ["নাম", "শ্রেণি", "স্কুল", "বিভাগ", "ফোন", "ইমেইল", "পরীক্ষা", "ধরন", "তারিখ", "নম্বর", "মোট", "অবস্থা"],
+      res.data.map((r) => [r.name, r.className, r.school, r.division, r.phone, r.email, r.exam, r.type, new Date(r.date).toLocaleString("bn-BD"), r.score, r.total, r.status])
+    );
+  }
+
+  if (stats === null) return <Loader label="পরিসংখ্যান লোড হচ্ছে…" />;
+  if (!stats.registrations) return <p className="text-sm text-[var(--color-redpen)]">পরিসংখ্যান আনা যায়নি — Apps Script-এ নতুন Code.gs ডিপ্লয় করা আছে তো?</p>;
+  const r = stats.registrations;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="মোট নিবন্ধন" value={r.total} />
+        <StatCard label="কনফার্মড" value={r.confirmed} tone="good" />
+        <StatCard label="পেমেন্ট যাচাইয়ের অপেক্ষায়" value={r.pending} tone={r.pending ? "warn" : "ink"} />
+        <StatCard label="মূল্যায়নের অপেক্ষায় খাতা" value={stats.pendingGrading} tone={stats.pendingGrading ? "warn" : "ink"} hint="একটা ছবি = একটা খাতা" />
+      </div>
+
+      <div>
+        <h3 className="font-display text-lg font-bold text-[var(--color-ink)]">Model Test অনুযায়ী</h3>
+        <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--color-paper-line)] bg-white/70">
+          <table className="w-full text-sm">
+            <thead className="bg-[var(--color-paper)] text-left text-xs text-[var(--color-text)]/70">
+              <tr><th className="px-3 py-2">টেস্ট</th><th className="px-3 py-2">স্টুডেন্ট</th><th className="px-3 py-2">জমা</th><th className="px-3 py-2">পেন্ডিং</th><th className="px-3 py-2">গড় নম্বর</th></tr>
+            </thead>
+            <tbody>
+              {stats.tests.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-[var(--color-text)]/60">এখনো কেউ কোনো Model Test দেয়নি।</td></tr>}
+              {stats.tests.map((t) => (
+                <tr key={t.title} className="border-t border-[var(--color-paper-line)]">
+                  <td className="px-3 py-2 font-semibold text-[var(--color-ink)]">{t.title}</td>
+                  <td className="px-3 py-2">{t.students}</td>
+                  <td className="px-3 py-2">{t.sessions}</td>
+                  <td className="px-3 py-2">{t.pending || "—"}</td>
+                  <td className="px-3 py-2">{t.avgPercent === null ? "—" : `${t.avgPercent}%`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <div>
+          <h3 className="font-display text-lg font-bold text-[var(--color-ink)]">সবচেয়ে কঠিন প্রশ্ন (গড় নম্বর কম)</h3>
+          <div className="mt-2 space-y-2">
+            {stats.hardQuestions.length === 0 && <p className="text-sm text-[var(--color-text)]/60">মূল্যায়ন হওয়া উত্তর এখনো নেই।</p>}
+            {stats.hardQuestions.map((q, i) => (
+              <div key={i} className="rounded-lg border border-[var(--color-paper-line)] bg-white/70 p-3">
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className="font-semibold text-[var(--color-ink)]">{q.test || "—"}</span>
+                  <span className="font-bold text-[var(--color-redpen)]">{q.avgPercent}% ({q.answers}টি উত্তর)</span>
+                </div>
+                <p className="lx-q mt-1 text-xs text-[var(--color-text)]/75">{q.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <h3 className="font-display text-lg font-bold text-[var(--color-ink)]">লাইভ পরীক্ষায় অংশগ্রহণ</h3>
+          <div className="mt-2 space-y-2">
+            {stats.live.length === 0 && <p className="text-sm text-[var(--color-text)]/60">কোনো লাইভ পরীক্ষা নেই।</p>}
+            {stats.live.map((l) => (
+              <div key={l.title} className="flex justify-between rounded-lg border border-[var(--color-paper-line)] bg-white/70 p-3 text-sm">
+                <span className="font-semibold text-[var(--color-ink)]">{l.title}</span>
+                <span>{l.participants} জন</span>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={exportResults}
+            disabled={exporting}
+            className="mt-5 w-full rounded-xl bg-[var(--color-ink)] px-4 py-3 font-display font-bold text-white disabled:opacity-60"
+          >
+            {exporting ? "তৈরি হচ্ছে…" : "⬇️ সব ফলাফল Excel/CSV এ ডাউনলোড"}
+          </button>
         </div>
       </div>
     </div>
@@ -107,9 +234,17 @@ function Registrations({ token }) {
 
   const visible = filter === "all" ? rows : rows.filter((r) => r.status === filter);
 
+  function exportRegistrations() {
+    downloadCsv(
+      `linguistic-registrations-${new Date().toISOString().slice(0, 10)}.csv`,
+      ["নাম", "শ্রেণি", "স্কুল", "বিভাগ", "ফোন", "ইমেইল", "বিকাশ নম্বর", "TrxID", "অবস্থা", "নিবন্ধনের সময়"],
+      rows.map((r) => [r.name, r.className, r.school, r.division, r.phone, r.email, r.bkashSender, r.transactionId, STATUS_LABEL[r.status] || r.status, r.createdAt ? new Date(r.createdAt).toLocaleString("bn-BD") : ""])
+    );
+  }
+
   return (
     <div>
-      <div className="mb-4 flex gap-2 text-sm">
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         {["all", "pending", "confirmed", "rejected"].map((f) => (
           <button
             key={f}
@@ -121,6 +256,9 @@ function Registrations({ token }) {
             {f === "all" ? "সব" : STATUS_LABEL[f]}
           </button>
         ))}
+        <button onClick={exportRegistrations} className="ml-auto rounded-full border-2 border-[var(--color-ink)] px-3 py-1 text-xs font-bold text-[var(--color-ink)]">
+          ⬇️ CSV
+        </button>
       </div>
 
       <div className="space-y-3">
@@ -148,6 +286,11 @@ function Registrations({ token }) {
                 {(r.bkashSender || r.transactionId) && (
                   <p className="mt-1 text-sm text-[var(--color-bluepen)]">
                     বিকাশ: {r.bkashSender} · TrxID: {r.transactionId}
+                  </p>
+                )}
+                {r.duplicateTrx && (
+                  <p className="mt-1 rounded bg-[var(--color-redpen)]/10 px-2 py-1 text-xs font-bold text-[var(--color-redpen)]">
+                    ⚠️ এই TrxID একাধিক নিবন্ধনে ব্যবহার হয়েছে — কনফার্মের আগে যাচাই করুন
                   </p>
                 )}
               </div>
@@ -246,6 +389,9 @@ function Settings({ token }) {
         <p className="mb-2 text-sm font-bold text-[var(--color-ink)]">লিখিত পরীক্ষা (মক টেস্ট)</p>
         <Field label="ডিফল্ট সময় (মিনিট) — যে মডেল টেস্টে আলাদা সময় দেওয়া নেই সেগুলোর জন্য">
           <input className="input" type="number" min="1" value={form.writtenMinutes || ""} onChange={set("writtenMinutes")} placeholder="যেমনঃ 25" />
+        </Field>
+        <Field label="সাইটের লিংক (ইমেইলে পোর্টালের বাটনের জন্য, যেমনঃ https://linguistic.netlify.app)">
+          <input className="input" value={form.siteUrl || ""} onChange={set("siteUrl")} placeholder="https://..." />
         </Field>
         <p className="text-xs text-[var(--color-text)]/60">
           প্রতিটা মডেল টেস্টের নিজস্ব সময় প্রশ্ন ট্যাবে প্রশ্ন লেখার ফর্মেই ঠিক করা যায়। লাইভ পরীক্ষার সময় ও
@@ -416,6 +562,8 @@ function Contacts({ token }) {
   );
 }
 
+const TOPIC_PRESETS = ["ধ্বনিতত্ত্ব", "রূপতত্ত্ব", "বাক্যতত্ত্ব", "শব্দার্থ", "লিপি ও বর্ণমালা", "সংখ্যা পদ্ধতি", "অনুবাদ ধাঁধা", "ভাষা পরিবার"];
+
 const emptyWrittenQuestion = {
   passageHtml: "",
   passageImageUrl: "",
@@ -428,6 +576,11 @@ const emptyWrittenQuestion = {
   liveExamId: "",
   testNo: "",
   minutes: "",
+  topics: "",
+  solutionHtml: "",
+  solutionImageUrl: "",
+  solutionImageBase64: "",
+  publishAt: "",
 };
 
 function WrittenQuestions({ token }) {
@@ -481,7 +634,12 @@ function WrittenQuestions({ token }) {
       return;
     }
     setSaving(true);
-    const payload = { ...form, subQuestions: cleanSubQuestions, status };
+    const payload = {
+      ...form,
+      subQuestions: cleanSubQuestions,
+      status,
+      publishAt: form.publishAt ? new Date(form.publishAt).toISOString() : "",
+    };
     const res = editingId
       ? await api.adminUpdateWrittenQuestion(token, editingId, payload)
       : await api.adminAddWrittenQuestion(token, payload);
@@ -514,6 +672,11 @@ function WrittenQuestions({ token }) {
       liveExamId: q.liveExamId || "",
       testNo: q.testNo || "",
       minutes: q.minutes || "",
+      topics: q.topics || "",
+      solutionHtml: q.solutionHtml || "",
+      solutionImageUrl: q.solutionImageUrl || "",
+      solutionImageBase64: "",
+      publishAt: toLocalInput_(q.publishAt),
     });
     setResetKey((k) => k + 1);
     setError("");
@@ -524,6 +687,27 @@ function WrittenQuestions({ token }) {
     setEditingId(null);
     setForm(emptyWrittenQuestion);
     setResetKey((k) => k + 1);
+  }
+
+  /** একটা প্রশ্ন-সেটের ড্রাফট কপি (ছবিসহ) — একই ধাঁচের নতুন Model Test বানাতে */
+  async function copyQ(q) {
+    setBusyId(q.id);
+    await api.adminAddWrittenQuestion(token, {
+      passageHtml: q.passageHtml || "",
+      passageImageUrl: q.passageImageUrl || "",
+      kind: "written",
+      status: "draft",
+      forMock: q.forMock === true || q.forMock === "TRUE",
+      forLive: q.forLive === true || q.forLive === "TRUE",
+      liveExamId: q.liveExamId || "",
+      minutes: q.minutes || "",
+      topics: q.topics || "",
+      solutionHtml: q.solutionHtml || "",
+      solutionImageUrl: q.solutionImageUrl || "",
+      subQuestions: (q.subQuestions || []).map((sq) => ({ text: sq.text || "", points: sq.points, imageUrl: sq.imageUrl || "" })),
+    });
+    setBusyId(null);
+    load();
   }
 
   async function deleteQ(id) {
@@ -668,6 +852,53 @@ function WrittenQuestions({ token }) {
           </Field>
         )}
 
+        <Field label="টপিক ট্যাগ (কমা দিয়ে আলাদা — স্টুডেন্ট নিজের দুর্বল টপিক দেখতে পাবে)">
+          <input className="input" value={form.topics} onChange={(e) => setForm((f) => ({ ...f, topics: e.target.value }))} placeholder="যেমনঃ ধ্বনিতত্ত্ব, রূপতত্ত্ব" />
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {TOPIC_PRESETS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() =>
+                  setForm((f) => {
+                    const cur = f.topics.split(",").map((x) => x.trim()).filter(Boolean);
+                    return { ...f, topics: (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]).join(", ") };
+                  })
+                }
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                  form.topics.split(",").map((x) => x.trim()).includes(t)
+                    ? "border-[var(--color-ink)] bg-[var(--color-ink)] text-white"
+                    : "border-[var(--color-paper-line)] bg-white text-[var(--color-ink)]"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        <details className="rounded-lg border border-[var(--color-greenpen)]/40 bg-[var(--color-greenpen)]/5 p-3" open={!!(form.solutionHtml || form.solutionImageUrl || form.solutionImageBase64)}>
+          <summary className="cursor-pointer text-sm font-bold text-[var(--color-greenpen)]">✓ আদর্শ উত্তর / সমাধান (ঐচ্ছিক — মূল্যায়নের পর স্টুডেন্ট দেখবে)</summary>
+          <div className="mt-3 space-y-3">
+            <RichTextEditor
+              value={form.solutionHtml}
+              onChange={(html) => setForm((f) => ({ ...f, solutionHtml: html }))}
+              placeholder="সমাধান লিখুন..."
+              resetKey={resetKey}
+            />
+            <ImagePicker
+              label="সমাধানের ছবি (ঐচ্ছিক)"
+              url={form.solutionImageUrl}
+              base64={form.solutionImageBase64}
+              onChange={({ url, base64 }) => setForm((f) => ({ ...f, solutionImageUrl: url, solutionImageBase64: base64 }))}
+            />
+          </div>
+        </details>
+
+        <Field label="স্বয়ংক্রিয় প্রকাশের সময় (ঐচ্ছিক — প্রকাশ করুন চাপলেও এই সময়ের আগে স্টুডেন্টরা দেখবে না)">
+          <input className="input" type="datetime-local" value={form.publishAt} onChange={(e) => setForm((f) => ({ ...f, publishAt: e.target.value }))} />
+        </Field>
+
         <div className="flex gap-2">
           <button
             type="button"
@@ -714,10 +945,15 @@ function WrittenQuestions({ token }) {
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button onClick={() => startEdit(q)} className="text-xs font-bold text-[var(--color-bluepen)] underline">এডিট</button>
+                    <button disabled={busyId === q.id} onClick={() => copyQ(q)} className="text-xs font-bold text-[var(--color-ink)] underline disabled:opacity-50">কপি</button>
                     <button disabled={busyId === q.id} onClick={() => deleteQ(q.id)} className="text-xs font-bold text-[var(--color-redpen)] underline disabled:opacity-50">মুছুন</button>
                   </div>
                 </div>
-                {q.passageHtml && <div className="mt-2 line-clamp-2 text-xs text-[var(--color-text)]/70" dangerouslySetInnerHTML={{ __html: q.passageHtml }} />}
+                {q.publishAt && new Date(q.publishAt) > new Date() && (
+                  <p className="mt-1 text-xs font-bold text-[var(--color-bluepen)]">⏰ {fmtBn_(q.publishAt)}-এ স্বয়ংক্রিয়ভাবে প্রকাশ হবে</p>
+                )}
+                {q.topics && <p className="mt-1 text-xs text-[var(--color-text)]/60">🏷 {q.topics}</p>}
+                {q.passageHtml && <div className="lx-q mt-2 line-clamp-2 text-xs text-[var(--color-text)]/70" dangerouslySetInnerHTML={{ __html: q.passageHtml }} />}
                 {(q.passageImageUrl || (q.subQuestions || []).some((sq) => sq.imageUrl)) && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {q.passageImageUrl && <img src={q.passageImageUrl} alt="উদ্দীপকের ছবি" className="h-14 rounded border border-[var(--color-paper-line)] bg-white" />}
@@ -754,6 +990,8 @@ function groupPendingWritten_(list) {
   return Object.values(groups);
 }
 
+const COMMENT_TEMPLATES = ["চমৎকার!", "যুক্তি স্পষ্ট করে লেখো", "নিয়মটা আবার দেখো", "হাতের লেখা আরও পরিষ্কার করো", "উদাহরণ থেকে নিয়ম ধরার চেষ্টা করো", "ভালো চেষ্টা, কিন্তু উত্তর অসম্পূর্ণ"];
+
 function Grading({ token }) {
   const [list, setList] = useState(null);
   const [selected, setSelected] = useState(null); // একটা গ্রুপ (একই ছবির সব প্রশ্ন)
@@ -761,25 +999,35 @@ function Grading({ token }) {
   const [comment, setComment] = useState("");
   const [annotated, setAnnotated] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [filter, setFilter] = useState("all"); // all | টেস্টের নাম | live
 
-  function load() {
-    setList(null);
+  function load(silent = false) {
+    if (!silent) setList(null);
     api.adminListPendingWritten(token).then((res) => setList(res.ok ? res.data : []));
   }
 
-  useEffect(load, [token]);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  const allGroups = list ? groupPendingWritten_(list) : [];
+  const filterOf = (g) => (g.examType === "live" ? "live" : g.testTitle || "other");
+  const filterOptions = [...new Set(allGroups.map(filterOf))].sort();
+  const groups = allGroups.filter((g) => filter === "all" || filterOf(g) === filter);
 
   function openGroup(group) {
     setSelected(group);
     setScores({});
     setComment("");
     setAnnotated(null);
+    window.scrollTo({ top: 0 });
   }
 
   async function save() {
     const items = selected.items
       .filter((it) => scores[it.id] !== undefined && scores[it.id] !== "")
-      .map((it) => ({ id: it.id, score: Number(scores[it.id]) }));
+      .map((it) => ({ id: it.id, score: Math.min(Number(scores[it.id]), Number(it.points) || Number(scores[it.id])) }));
     if (items.length === 0) return;
     setSaving(true);
     await api.adminGradeWrittenBatch(token, {
@@ -788,57 +1036,103 @@ function Grading({ token }) {
       adminComment: comment,
     });
     setSaving(false);
-    setSelected(null);
-    load();
+    // পরের খাতায় সরাসরি চলে যাওয়া (ফিল্টার করা তালিকার ক্রমে) — তালিকায় ফিরতে হয় না
+    const idx = groups.findIndex((g) => g.key === selected.key);
+    const next = groups[idx + 1] || groups[idx - 1];
+    setList((old) => (old || []).filter((it) => !selected.items.some((s) => s.id === it.id)));
+    if (next && next.key !== selected.key) openGroup(next);
+    else setSelected(null);
+    load(true);
   }
 
   if (selected) {
     const allFilled = selected.items.every((it) => scores[it.id] !== undefined && scores[it.id] !== "");
+    const remaining = groups.filter((g) => g.key !== selected.key).length;
     return (
       <div className="max-w-2xl">
-        <button onClick={() => setSelected(null)} className="mb-3 text-sm font-bold text-[var(--color-bluepen)] underline">
-          ← তালিকায় ফিরুন
-        </button>
+        <div className="mb-3 flex items-center justify-between">
+          <button onClick={() => setSelected(null)} className="text-sm font-bold text-[var(--color-bluepen)] underline">
+            ← তালিকায় ফিরুন
+          </button>
+          <span className="rounded-full bg-[var(--color-marigold)]/20 px-3 py-1 text-xs font-bold text-[var(--color-marigold-dark)]">
+            এরপর আরও {remaining}টি খাতা বাকি
+          </span>
+        </div>
+        {selected.testTitle && <p className="mb-2 font-display text-sm font-bold text-[var(--color-ink)]">{selected.testTitle}</p>}
 
         {selected.passageHtml && (
           <div
-            className="mb-3 rounded-lg border border-[var(--color-paper-line)] bg-[var(--color-paper)] p-3 text-sm leading-relaxed"
+            className="lx-q mb-3 rounded-lg border border-[var(--color-paper-line)] bg-[var(--color-paper)] p-3 text-sm"
             dangerouslySetInnerHTML={{ __html: selected.passageHtml }}
           />
         )}
 
         {selected.passageImageUrl && (
-          <img src={selected.passageImageUrl} alt="প্রশ্নের ছবি" className="mb-3 w-full rounded-lg border border-[var(--color-paper-line)] bg-white object-contain" />
+          <ZoomImage src={selected.passageImageUrl} alt="প্রশ্নের ছবি" className="mb-3 w-full rounded-lg border border-[var(--color-paper-line)] bg-white object-contain" />
         )}
 
-        <GradingCanvas imageUrl={selected.imageUrl} onExport={setAnnotated} />
+        <GradingCanvas key={selected.key} imageUrl={selected.imageUrl} onExport={setAnnotated} />
         {annotated && <p className="mt-2 text-xs text-[var(--color-greenpen)]">মার্কিং প্রস্তুত ✓ — নিচে প্রতিটার নম্বর দিয়ে সাবমিট করুন।</p>}
 
         <div className="mt-4 space-y-3 rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
-          <p className="text-sm font-bold text-[var(--color-ink)]">
-            এই খাতায় {selected.items.length}টি প্রশ্ন — প্রতিটার নম্বর আলাদাভাবে দিন
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-bold text-[var(--color-ink)]">
+              এই খাতায় {selected.items.length}টি প্রশ্ন — প্রতিটার নম্বর আলাদাভাবে দিন
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setScores(Object.fromEntries(selected.items.map((it) => [it.id, it.points])))}
+                className="rounded-lg bg-[var(--color-greenpen)]/15 px-3 py-1 text-xs font-bold text-[var(--color-greenpen)]"
+              >
+                সব পূর্ণ নম্বর
+              </button>
+              <button
+                type="button"
+                onClick={() => setScores(Object.fromEntries(selected.items.map((it) => [it.id, 0])))}
+                className="rounded-lg bg-[var(--color-redpen)]/10 px-3 py-1 text-xs font-bold text-[var(--color-redpen)]"
+              >
+                সব ০
+              </button>
+            </div>
+          </div>
           {selected.items.map((it, i) => (
             <div key={it.id} className="rounded-lg bg-[var(--color-paper)] p-3">
-              <div className="text-xs font-semibold text-[var(--color-ink)]" dangerouslySetInnerHTML={{ __html: `${i + 1}. ${it.subQuestionText || ""}` }} />
+              <div className="lx-q text-xs font-semibold text-[var(--color-ink)]" dangerouslySetInnerHTML={{ __html: `${i + 1}. ${it.subQuestionText || ""}` }} />
               {it.subQuestionImageUrl && (
-                <img src={it.subQuestionImageUrl} alt="প্রশ্নের ছবি" className="mt-1 max-h-48 rounded-md border border-[var(--color-paper-line)] bg-white" />
+                <ZoomImage src={it.subQuestionImageUrl} alt="প্রশ্নের ছবি" className="mt-1 max-h-48 rounded-md border border-[var(--color-paper-line)] bg-white" />
               )}
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <label className="text-xs text-[var(--color-text)]/70">নম্বর (সর্বোচ্চ {it.points}):</label>
                 <input
                   className="input w-24"
                   type="number"
+                  min="0"
                   max={it.points}
                   value={scores[it.id] ?? ""}
                   onChange={(e) => setScores((s) => ({ ...s, [it.id]: e.target.value }))}
                 />
+                <button type="button" onClick={() => setScores((s) => ({ ...s, [it.id]: it.points }))} className="text-xs font-bold text-[var(--color-greenpen)] underline">
+                  পূর্ণ
+                </button>
               </div>
             </div>
           ))}
 
           <Field label="সামগ্রিক মন্তব্য (ঐচ্ছিক, সবগুলোর জন্য একই থাকবে)">
             <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} />
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {COMMENT_TEMPLATES.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setComment((c) => (c ? `${c} ${t}` : t))}
+                  className="rounded-full border border-[var(--color-paper-line)] bg-white px-2.5 py-0.5 text-xs font-semibold text-[var(--color-ink)] hover:bg-[var(--color-marigold)]/20"
+                >
+                  + {t}
+                </button>
+              ))}
+            </div>
           </Field>
 
           <button
@@ -846,20 +1140,35 @@ function Grading({ token }) {
             onClick={save}
             className="w-full rounded-xl bg-[var(--color-ink)] px-6 py-3 font-display font-bold text-white disabled:opacity-60"
           >
-            {saving ? "সেভ হচ্ছে…" : `সবগুলো (${selected.items.length}টি) মূল্যায়ন সেভ করুন`}
+            {saving ? "সেভ হচ্ছে…" : `সেভ করে পরের খাতায় যান (${selected.items.length}টি প্রশ্ন)`}
           </button>
         </div>
       </div>
     );
   }
 
-  const groups = list ? groupPendingWritten_(list) : [];
-
   return (
     <div>
-      <h3 className="font-display text-lg font-bold text-[var(--color-ink)]">
-        মূল্যায়নের অপেক্ষায় {list ? `(${groups.length}টি খাতা)` : ""}
-      </h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-display text-lg font-bold text-[var(--color-ink)]">
+          মূল্যায়নের অপেক্ষায় {list ? `(${groups.length}টি খাতা)` : ""}
+        </h3>
+        {allGroups.length > 0 && (
+          <div className="flex items-center gap-2">
+            <select className="input !w-auto !py-1.5 text-sm" value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <option value="all">সব পরীক্ষা</option>
+              {filterOptions.map((o) => (
+                <option key={o} value={o}>{o === "live" ? "লাইভ পরীক্ষা" : o === "other" ? "অন্যান্য" : o}</option>
+              ))}
+            </select>
+            {groups.length > 0 && (
+              <button onClick={() => openGroup(groups[0])} className="rounded-lg bg-[var(--color-redpen)] px-3 py-1.5 text-sm font-bold text-white">
+                ▶ মূল্যায়ন শুরু করুন
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       {list === null ? (
         <Loader label="লোড হচ্ছে…" />
       ) : (

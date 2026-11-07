@@ -54,3 +54,34 @@ export function compressImage(dataUrl, maxDim = 1400, quality = 0.72) {
     img.src = dataUrl;
   });
 }
+
+/** একাধিক ছবি (উত্তরের একাধিক পৃষ্ঠা) উপর-নিচে জুড়ে একটা লম্বা ছবি বানায় — যাতে মূল্যায়ন,
+ *  দাগানো ও সংরক্ষণ আগের মতোই একটা ছবি হিসেবে চলে। একটাই ছবি থাকলে সেটাই ফেরত দেয়। */
+export async function stitchImages(dataUrls, width = 1100, quality = 0.72) {
+  if (dataUrls.length === 1) return dataUrls[0];
+  const imgs = await Promise.all(
+    dataUrls.map(
+      (src) =>
+        new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = src;
+        })
+    )
+  );
+  const gap = 14;
+  const heights = imgs.map((img) => Math.round((img.height * width) / img.width));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = heights.reduce((a, b) => a + b, 0) + gap * (imgs.length - 1);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  let y = 0;
+  imgs.forEach((img, i) => {
+    ctx.drawImage(img, 0, y, width, heights[i]);
+    y += heights[i] + gap;
+  });
+  return canvas.toDataURL("image/jpeg", quality);
+}

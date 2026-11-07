@@ -133,7 +133,7 @@ export default function Home() {
           <div>
             <p className="lx-serif text-sm text-[var(--color-paper)]/75">
               <span className="font-bold italic text-white">Linguistic</span>{" "}
-              <span className="italic">/lɪŋˈɡwɪstɪk/</span> বিণ. — ভাষা-সংক্রান্ত
+              <span className="italic">/lɪŋˈɡwɪstɪk/</span>  . — ভাষা-সংক্রান্ত
             </p>
             <h1 className="lx-serif mt-3 text-6xl font-bold italic leading-none text-white sm:text-7xl md:text-[5.5rem]">
               Linguistic
@@ -143,7 +143,7 @@ export default function Home() {
             </p>
             <p className="mt-1 font-display text-base font-semibold text-[var(--color-paper)]/80">অগ্রদূত উপস্থাপিত</p>
             <p className="mt-5 max-w-md text-base leading-relaxed text-[var(--color-paper)]/90 md:text-lg">
-              ষষ্ঠ থেকে দশম শ্রেণির শিক্ষার্থীদের জন্য ভাষাবিজ্ঞান অলিম্পিয়াডের পরিপূর্ণ প্রস্তুতি। লিখিত
+              ষষ্ঠ থেকে দ্বাদশ শ্রেণির শিক্ষার্থীদের জন্য ভাষাবিজ্ঞান অলিম্পিয়াডের পরিপূর্ণ প্রস্তুতি। লিখিত
               Model Test সিরিজ, লাইভ পরীক্ষা, বিস্তারিত মূল্যায়ন ও র‍্যাঙ্কিং — সবকিছু এক জায়গায়।
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -234,12 +234,20 @@ export default function Home() {
               লিঙ্গুইসটিক অলিম্পিয়াডে কোনো ভাষা জানা লাগে না — সাজানো কিছু উদাহরণ থেকে নিয়ম ধরে
               উত্তর বের করতে হয়। এই ধাঁধাটা একবার চেষ্টা করে দেখো।
             </p>
-            <Link
-              to="/register"
-              className="mt-6 inline-block rounded-xl bg-[var(--color-marigold)] px-6 py-3 font-display font-bold text-[var(--color-ink-dark)] transition hover:brightness-110 active:scale-95"
-            >
-              এমন আরও ধাঁধার জন্য নিবন্ধন করুন
-            </Link>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                to="/puzzles"
+                className="inline-block rounded-xl bg-[var(--color-marigold)] px-6 py-3 font-display font-bold text-[var(--color-ink-dark)] transition hover:brightness-110 active:scale-95"
+              >
+                আরও ৫টা ধাঁধা করে দেখো
+              </Link>
+              <Link
+                to="/register"
+                className="inline-block rounded-xl border-2 border-white/70 px-6 py-3 font-display font-bold text-white transition hover:bg-white hover:text-[var(--color-ink)] active:scale-95"
+              >
+                কোর্সে নিবন্ধন
+              </Link>
+            </div>
           </div>
           <div className="border border-white/25 bg-white/5 p-5">
             <p className="lx-serif mb-1 text-xs italic text-[var(--color-paper)]/60">Tavu ভাষা (বানানো)</p>

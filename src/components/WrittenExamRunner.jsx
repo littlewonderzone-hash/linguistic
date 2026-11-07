@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import Loader from "../components/Loader";
-import { fileToDataUrl, compressImage } from "../lib/image";
+import { fileToDataUrl, compressImage, stitchImages } from "../lib/image";
+import ZoomImage from "./ZoomImage";
+
+const MAX_PAGES = 4; // এক সেটের উত্তরে সর্বোচ্চ কয়টা পৃষ্ঠার ছবি
 
 const TITLE = { written: "লিখিত পরীক্ষা" };
 
@@ -10,15 +13,15 @@ const TITLE = { written: "লিখিত পরীক্ষা" };
  *  ক্যামেরা খোলে না (শুধু ফাইল/গ্যালারি কাজ করে), আবার কিছু ফোনে সম্মিলিত
  *  চুজার ব্যবহার করলে সমস্যা দেখা যায় — তাই দুইটা সম্পূর্ণ আলাদা <input>
  *  হিসেবে রাখা হয়েছে যাতে একটা কাজ না করলেও অন্যটা দিয়ে চালানো যায়। */
-function PhotoPicker({ onFile }) {
+function PhotoPicker({ onFile, more = false }) {
   return (
     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
       <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--color-marigold)] bg-[var(--color-marigold)]/10 px-4 py-4 font-display text-sm font-bold text-[var(--color-marigold-dark)] transition hover:bg-[var(--color-marigold)]/20">
-        📷 ক্যামেরা দিয়ে ছবি তুলুন
+        📷 {more ? "আরেক পৃষ্ঠার ছবি তুলুন" : "ক্যামেরা দিয়ে ছবি তুলুন"}
         <input type="file" accept="image/*" capture="environment" onChange={(e) => onFile(e.target.files?.[0])} className="hidden" />
       </label>
       <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--color-bluepen)] bg-[var(--color-bluepen)]/10 px-4 py-4 font-display text-sm font-bold text-[var(--color-bluepen)] transition hover:bg-[var(--color-bluepen)]/20">
-        🖼️ গ্যালারি থেকে বাছাই করুন
+        🖼️ {more ? "গ্যালারি থেকে আরেকটা" : "গ্যালারি থেকে বাছাই করুন"}
         <input type="file" accept="image/*" onChange={(e) => onFile(e.target.files?.[0])} className="hidden" />
       </label>
     </div>
@@ -70,6 +73,16 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
     stageRef.current = stage;
   }, [stage]);
 
+  // প্রশ্নের ছবিগুলো আগে থেকেই লোড করে রাখা — পরীক্ষার সময় ধীর নেটওয়ার্কে ছবি দেরিতে আসা আটকাতে
+  useEffect(() => {
+    sets.forEach((set) => {
+      [set.passageImageUrl, ...(set.subQuestions || []).map((sq) => sq.imageUrl)].filter(Boolean).forEach((u) => {
+        const img = new Image();
+        img.src = u;
+      });
+    });
+  }, [sets]);
+
   useEffect(() => {
     if (stage !== "exam") return;
     const id = setInterval(() => {
@@ -90,13 +103,19 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
     if (!file) return;
     const rawDataUrl = await fileToDataUrl(file);
     const dataUrl = await compressImage(rawDataUrl);
-    setImages((prev) => ({ ...prev, [setId]: { dataUrl, mimeType: "image/jpeg" } }));
+    setImages((prev) => {
+      const pages = prev[setId] || [];
+      if (pages.length >= MAX_PAGES) return prev;
+      return { ...prev, [setId]: [...pages, dataUrl] };
+    });
   }
 
-  function clearImage(setId) {
+  function removePage(setId, index) {
     setImages((prev) => {
+      const pages = (prev[setId] || []).filter((_, i) => i !== index);
       const next = { ...prev };
-      delete next[setId];
+      if (pages.length === 0) delete next[setId];
+      else next[setId] = pages;
       return next;
     });
   }
@@ -106,12 +125,14 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
     setStage("submitting");
 
     const entries = setsRef.current
-      .map((set) => ({ set, image: imagesRef.current[set.id] }))
-      .filter((e) => e.image && (e.set.subQuestions || []).length > 0);
+      .map((set) => ({ set, pages: imagesRef.current[set.id] }))
+      .filter((e) => e.pages && e.pages.length > 0 && (e.set.subQuestions || []).length > 0);
 
     setSubmitProgress({ done: 0, total: entries.length });
     try {
-      for (const { set, image } of entries) {
+      for (const { set, pages } of entries) {
+        // একাধিক পৃষ্ঠা থাকলে উপর-নিচে জুড়ে একটা ছবি — মূল্যায়ন আগের মতোই এক ছবিতে হয়
+        const merged = await stitchImages(pages);
         const items = (set.subQuestions || []).map((sq) => ({
           writtenQuestionId: sq.writtenQuestionId,
           subQuestionId: sq.id,
@@ -126,8 +147,8 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
           liveExamId,
           sessionId: sessionIdRef.current,
           items,
-          imageBase64: image.dataUrl,
-          mimeType: image.mimeType,
+          imageBase64: merged,
+          mimeType: "image/jpeg",
         });
         setSubmitProgress((p) => ({ ...p, done: p.done + 1 }));
       }
@@ -189,7 +210,7 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
 
   const mm = Math.floor(secondsLeft / 60);
   const ss = secondsLeft % 60;
-  const answeredSets = sets.filter((s) => images[s.id]).length;
+  const answeredSets = sets.filter((s) => (images[s.id] || []).length > 0).length;
 
   return (
     <div className="min-h-screen bg-[var(--color-paper)] pb-24">
@@ -201,7 +222,7 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
       </div>
 
       <p className="mx-auto mt-3 max-w-2xl px-4 text-xs text-[var(--color-text)]/60">
-        {"একটা উদ্দীপকের সবগুলো প্রশ্নের উত্তর একই পৃষ্ঠায় (বা টানা কয়েক পৃষ্ঠায়) লিখে তার একটাই ছবি তুলুন/আপলোড করুন।"}{" "}
+        {"একটা উদ্দীপকের সবগুলো প্রশ্নের উত্তর খাতায় লিখে ছবি তুলুন/আপলোড করুন। উত্তর একাধিক পৃষ্ঠায় হলে সর্বোচ্চ ৪টা পৃষ্ঠার ছবি দিন — সবগুলো একসাথে জমা হবে। ছবিতে চাপ দিলে বড় করে দেখা যায়।"}{" "}
         উত্তরপত্র জমা: {answeredSets}/{sets.length}
       </p>
 
@@ -209,10 +230,11 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
         {sets.map((set) => (
           <div key={set.id} className="rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
             {set.passageHtml && (
-              <div className="mb-3 rounded-lg bg-[var(--color-paper)] p-3 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: set.passageHtml }} />
+              <div className="lx-q mb-3 rounded-lg bg-[var(--color-paper)] p-3 text-sm" dangerouslySetInnerHTML={{ __html: set.passageHtml }} />
             )}
             {set.passageImageUrl && (
-              <img
+              <ZoomImage
+                eager
                 src={set.passageImageUrl}
                 alt="প্রশ্নের ছবি"
                 className="mb-3 w-full rounded-lg border border-[var(--color-paper-line)] bg-white object-contain"
@@ -225,13 +247,14 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
                 return (
                   <li key={sq.id} className="font-semibold text-[var(--color-ink)]">
                     {hasText ? (
-                      <span dangerouslySetInnerHTML={{ __html: sq.text }} />
+                      <span className="lx-q" dangerouslySetInnerHTML={{ __html: sq.text }} />
                     ) : (
                       !sq.imageUrl && <span>প্রশ্ন নং {qi + 1}</span>
                     )}{" "}
                     <span className="text-xs font-normal text-[var(--color-text)]/50">({sq.points} নম্বর)</span>
                     {sq.imageUrl && (
-                      <img
+                      <ZoomImage
+                        eager
                         src={sq.imageUrl}
                         alt={`প্রশ্ন ${qi + 1}-এর ছবি`}
                         className="mt-2 w-full rounded-lg border border-[var(--color-paper-line)] bg-white object-contain"
@@ -242,20 +265,31 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
               })}
             </ol>
 
-            {!images[set.id] ? (
-              <PhotoPicker onFile={(file) => handleFile(set.id, file)} />
-            ) : (
-              <div className="relative mt-3 inline-block">
-                <img src={images[set.id].dataUrl} alt="উত্তরের প্রিভিউ" className="max-h-64 rounded-lg border border-[var(--color-paper-line)]" />
-                <button
-                  type="button"
-                  onClick={() => clearImage(set.id)}
-                  title="ছবি বাদ দিয়ে আবার তুলুন"
-                  className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-redpen)] font-bold text-white shadow-md"
-                >
-                  ✕
-                </button>
+            {(images[set.id] || []).length > 0 && (
+              <div className="mt-3">
+                <p className="mb-1 text-xs font-semibold text-[var(--color-ink)]">
+                  উত্তরপত্র: {images[set.id].length}টি পৃষ্ঠা (সর্বোচ্চ {MAX_PAGES}টি)
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {images[set.id].map((page, pi) => (
+                    <div key={pi} className="relative">
+                      <ZoomImage src={page} alt={`পৃষ্ঠা ${pi + 1}`} className="h-28 rounded-lg border border-[var(--color-paper-line)] object-cover" eager />
+                      <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 text-[10px] font-bold text-white">{pi + 1}</span>
+                      <button
+                        type="button"
+                        onClick={() => removePage(set.id, pi)}
+                        title="এই পৃষ্ঠা বাদ দিন"
+                        className="absolute -right-2 -top-2 grid h-6 w-6 place-items-center rounded-full bg-[var(--color-redpen)] text-xs font-bold text-white shadow-md"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
+            )}
+            {(images[set.id] || []).length < MAX_PAGES && (
+              <PhotoPicker more={(images[set.id] || []).length > 0} onFile={(file) => handleFile(set.id, file)} />
             )}
           </div>
         ))}

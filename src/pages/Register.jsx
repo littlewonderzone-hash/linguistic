@@ -15,7 +15,7 @@ const DIVISIONS = [
   "কুমিল্লা",
 ];
 
-const CLASSES = ["ষষ্ঠ", "সপ্তম", "অষ্টম", "নবম", "দশম"];
+const CLASSES = ["ষষ্ঠ", "সপ্তম", "অষ্টম", "নবম", "দশম", "একাদশ", "দ্বাদশ"];
 
 const empty = {
   name: "",
@@ -39,7 +39,7 @@ export default function Register() {
 
   function copyBkashNumber() {
     navigator.clipboard
-      .writeText("01710176301")
+      .writeText("01872821870")
       .then(() => {
         setBkashCopied(true);
         setTimeout(() => setBkashCopied(false), 2000);
@@ -203,7 +203,7 @@ export default function Register() {
             <div className="rounded-xl border border-[var(--color-marigold)]/40 bg-[var(--color-marigold)]/10 p-4 text-sm leading-relaxed">
               নিচের বিকাশ নম্বরে{" "}
               <span className="inline-flex items-center gap-2 align-middle">
-                <span className="font-display text-base font-bold text-[var(--color-ink)]">01710176301</span>
+                <span className="font-display text-base font-bold text-[var(--color-ink)]">01872821870</span>
                 <button
                   type="button"
                   onClick={copyBkashNumber}

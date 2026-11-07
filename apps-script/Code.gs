@@ -29,6 +29,7 @@ const WRITTEN_QUESTION_HEADERS = [
   "id", "passageHtml", "questionsJson", "kind", "status",
   "forMock", "forLive", "createdAt", "passageImageUrl", "liveExamId",
   "testNo", "minutes",
+  "topics", "solutionHtml", "solutionImageUrl", "publishAt",
 ];
 
 // একাধিক লাইভ পরীক্ষা — প্রতিটার নিজস্ব নাম, শুরু/শেষের উইন্ডো (ISO সময়) ও পরীক্ষার সময়কাল (মিনিট)
@@ -75,11 +76,12 @@ function setup() {
     settingsSheet.appendRow(["courseImageUrl", ""]);
     settingsSheet.appendRow(["maintenanceMode", "FALSE"]);
     settingsSheet.appendRow(["writtenMinutes", "25"]);
+    settingsSheet.appendRow(["siteUrl", ""]);
     settingsSheet.appendRow(["logoUrl", ""]);
     settingsSheet.setFrozenRows(1);
   } else {
     ensureSettingsKeys_(settingsSheet, [
-      "writtenMinutes", "logoUrl",
+      "writtenMinutes", "siteUrl", "logoUrl",
     ]);
   }
 
@@ -117,6 +119,7 @@ function setup() {
 
   Logger.log("সেটআপ সম্পন্ন! এখন Deploy → New deployment (বা Manage deployments → New version) করুন।");
   Logger.log("অ্যাডমিন লগইন — username: " + DEFAULT_ADMIN_USERNAME + " | password: " + DEFAULT_ADMIN_PASSWORD);
+  installTriggers_(); // দৈনিক ব্যাকআপ ও লাইভ রিমাইন্ডার
 }
 
 /** কোনো শিটে হেডার না থাকলে বসিয়ে দেয়; থাকলে যা যা নতুন কলাম বাকি আছে সেগুলো
@@ -241,18 +244,47 @@ function fixExistingPhoneNumbers() {
 
 /* ---------------- Settings ---------------- */
 
+/* ---- ছোট ক্যাশ (CacheService): সেটিংস ও লাইভ তালিকা বারবার শিট থেকে না পড়ে, বড় লাইভ পরীক্ষায় একসাথে অনেকে ঢুকলে চাপ কমাতে ---- */
+function cacheGet_(key) {
+  try {
+    const v = CacheService.getScriptCache().get(key);
+    return v ? JSON.parse(v) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function cachePut_(key, obj, seconds) {
+  try {
+    CacheService.getScriptCache().put(key, JSON.stringify(obj), seconds);
+  } catch (e) {
+    // ক্যাশ না হলেও কোনো সমস্যা নেই
+  }
+}
+function cacheDrop_(keys) {
+  try {
+    CacheService.getScriptCache().removeAll(keys);
+  } catch (e) {
+    // উপেক্ষা
+  }
+}
+
 function getSettingsObj_() {
-  const sheet = getSheet_("Settings");
-  const rows = sheet.getDataRange().getValues();
-  const settings = {};
-  for (let i = 1; i < rows.length; i++) {
-    settings[rows[i][0]] = rows[i][1];
+  let settings = cacheGet_("settings_v1");
+  if (!settings) {
+    const sheet = getSheet_("Settings");
+    const rows = sheet.getDataRange().getValues();
+    settings = {};
+    for (let i = 1; i < rows.length; i++) {
+      settings[rows[i][0]] = rows[i][1];
+    }
+    cachePut_("settings_v1", settings, 30);
   }
   settings.maintenanceMode = settings.maintenanceMode === true || settings.maintenanceMode === "TRUE";
   return settings;
 }
 
 function setSettingsObj_(newSettings) {
+  cacheDrop_(["settings_v1"]);
   const sheet = getSheet_("Settings");
   const rows = sheet.getDataRange().getValues();
   const keyRow = {};
@@ -422,7 +454,9 @@ function toIso_(v) {
 }
 
 function listLiveExams_() {
-  return sheetToObjects_(getSheet_("LiveExams"))
+  const cached = cacheGet_("liveExams_v1");
+  if (cached) return cached;
+  const list = sheetToObjects_(getSheet_("LiveExams"))
     .filter((e) => e.id)
     .map((e) => ({
       id: String(e.id),
@@ -432,6 +466,8 @@ function listLiveExams_() {
       minutes: Number(e.minutes) > 0 ? Math.round(Number(e.minutes)) : 25,
     }))
     .sort((a, b) => new Date(a.start) - new Date(b.start));
+  cachePut_("liveExams_v1", list, 30);
+  return list;
 }
 
 function findLiveExam_(id) {
@@ -481,6 +517,22 @@ function resolveQuestionImage_(base64, existingUrl, prefix) {
   return existingUrl || "";
 }
 
+/** টপিক ট্যাগ: কমা দিয়ে আলাদা করা লেখা (বা অ্যারে) → পরিষ্কার "ক, খ, গ" স্ট্রিং */
+function cleanTopics_(v) {
+  const arr = Array.isArray(v) ? v : String(v || "").split(",");
+  const seen = {};
+  return arr
+    .map((t) => String(t).trim())
+    .filter((t) => t && !seen[t] && (seen[t] = true))
+    .slice(0, 6)
+    .join(", ");
+}
+
+/** প্রকাশের সময় ভবিষ্যতে হলে প্রশ্নটা এখনো স্টুডেন্টদের কাছে লুকানো (স্বয়ংক্রিয় প্রকাশ) */
+function isLiveNow_(q) {
+  return !q.publishAt || new Date(q.publishAt) <= new Date();
+}
+
 function buildSubQuestions_(list, keepIds) {
   return (list || []).map((sq) => ({
     id: keepIds && sq.id ? sq.id : Utilities.getUuid(),
@@ -506,6 +558,10 @@ function addWrittenQuestion_(q) {
     liveExamId: q.forLive && q.liveExamId ? String(q.liveExamId) : "",
     testNo: q.forMock !== false ? (Number(q.testNo) > 0 ? Math.round(Number(q.testNo)) : nextTestNo_()) : "",
     minutes: Number(q.minutes) > 0 ? Math.round(Number(q.minutes)) : "",
+    topics: cleanTopics_(q.topics),
+    solutionHtml: q.solutionHtml || "",
+    solutionImageUrl: resolveQuestionImage_(q.solutionImageBase64, q.solutionImageUrl, "solution"),
+    publishAt: toIso_(q.publishAt),
     createdAt: new Date(),
   });
   return id;
@@ -527,6 +583,10 @@ function updateWrittenQuestion_(id, q) {
   sheet.getRange(rowIdx, col("forLive")).setValue(!!q.forLive);
   sheet.getRange(rowIdx, col("liveExamId")).setValue(q.forLive && q.liveExamId ? String(q.liveExamId) : "");
   sheet.getRange(rowIdx, col("minutes")).setValue(Number(q.minutes) > 0 ? Math.round(Number(q.minutes)) : "");
+  sheet.getRange(rowIdx, col("topics")).setValue(cleanTopics_(q.topics));
+  sheet.getRange(rowIdx, col("solutionHtml")).setValue(q.solutionHtml || "");
+  sheet.getRange(rowIdx, col("solutionImageUrl")).setValue(resolveQuestionImage_(q.solutionImageBase64, q.solutionImageUrl, "solution"));
+  sheet.getRange(rowIdx, col("publishAt")).setValue(toIso_(q.publishAt));
   if (q.forMock !== false) {
     sheet.getRange(rowIdx, col("testNo")).setValue(Number(q.testNo) > 0 ? Math.round(Number(q.testNo)) : nextTestNo_());
   } else {
@@ -619,7 +679,7 @@ function parsedWrittenQuestions_() {
 function publishedModelTests_() {
   ensureModelNumbers_();
   return parsedWrittenQuestions_()
-    .filter((q) => q.status === "published" && isTrue_(q.forMock) && (q.kind || "written") === "written")
+    .filter((q) => q.status === "published" && isLiveNow_(q) && isTrue_(q.forMock) && (q.kind || "written") === "written")
     .sort((a, b) => a.testNo - b.testNo);
 }
 
@@ -673,6 +733,7 @@ function getLiveSets_(liveExamId) {
     .filter(
       (q) =>
         q.status === "published" &&
+        isLiveNow_(q) &&
         (q.kind || "written") === "written" &&
         isTrue_(q.forLive) &&
         (!q.liveExamId || String(q.liveExamId) === String(liveExamId))
@@ -728,18 +789,49 @@ function listWrittenAttemptsForStudent_(registrationId) {
   const rows = sheetToObjects_(getSheet_("WrittenAttempts")).filter(
     (a) => String(a.registrationId) === String(registrationId)
   );
-  const liveTitle = {};
-  listLiveExams_().forEach((e) => (liveTitle[e.id] = e.title));
-  const testTitle = {};
-  parsedWrittenQuestions_().forEach((q) => (testTitle[String(q.id)] = q.testTitle));
+  const liveById = {};
+  listLiveExams_().forEach((e) => (liveById[e.id] = e));
+  const qById = {};
+  parsedWrittenQuestions_().forEach((q) => (qById[String(q.id)] = q));
+  const now = new Date();
+
   const sessions = {};
   rows.forEach((a) => {
+    const q = qById[String(a.writtenQuestionId)] || {};
     if (!sessions[a.sessionId]) {
-      sessions[a.sessionId] = { sessionId: a.sessionId, examType: a.examType, kind: a.kind, createdAt: a.createdAt, liveExamTitle: liveTitle[String(a.liveExamId)] || "", testTitle: a.examType === "mock" ? testTitle[String(a.writtenQuestionId)] || "" : "", items: [] };
+      const live = liveById[String(a.liveExamId)];
+      sessions[a.sessionId] = {
+        sessionId: a.sessionId,
+        examType: a.examType,
+        kind: a.kind,
+        createdAt: a.createdAt,
+        liveExamTitle: live ? live.title : "",
+        liveEnded: live ? now > new Date(live.end) : true,
+        testTitle: a.examType === "mock" ? q.testTitle || "" : "",
+        items: [],
+      };
     }
-    sessions[a.sessionId].items.push(a);
+    sessions[a.sessionId].items.push({ ...a, topics: q.topics || "" });
   });
-  return Object.values(sessions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  return Object.values(sessions)
+    .map((sess) => {
+      const allGraded = sess.items.every((it) => it.status === "graded");
+      // সমাধান শুধু মূল্যায়ন শেষ হলে; লাইভ পরীক্ষায় আরও শর্ত — লাইভের সময়সীমা শেষ হতে হবে
+      if (allGraded && (sess.examType === "mock" || sess.liveEnded)) {
+        const solutions = {};
+        sess.items.forEach((it) => {
+          const q = qById[String(it.writtenQuestionId)];
+          if (q && !solutions[q.id] && (q.solutionHtml || q.solutionImageUrl)) {
+            solutions[q.id] = { html: q.solutionHtml || "", imageUrl: q.solutionImageUrl || "" };
+          }
+        });
+        sess.solutions = solutions;
+      }
+      delete sess.liveEnded;
+      return sess;
+    })
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 function listPendingWrittenAttempts_() {
@@ -771,6 +863,228 @@ function gradeWrittenAttempt_(id, score, annotatedImageUrl, adminComment) {
 /** একটা পুরো গ্রুপ (একই ছবির সাথে যুক্ত সবগুলো প্রশ্ন — যেমন একটা উদ্দীপকের
  *  সবকটা প্রশ্ন) একসাথে মূল্যায়ন করে — প্রতিটার নম্বর
  *  আলাদা, কিন্তু দাগানো ছবি ও মন্তব্য সবগুলোর জন্য একই। */
+/* ---------------- ইমেইল (MailApp) — ব্যর্থ হলেও মূল কাজ থামে না ---------------- */
+
+function sendMailSafe_(to, subject, htmlBody) {
+  try {
+    if (!to) return;
+    MailApp.sendEmail({ to: String(to), subject, htmlBody, name: "অগ্রদূত Linguistic" });
+  } catch (e) {
+    Logger.log("ইমেইল পাঠানো যায়নি: " + e);
+  }
+}
+
+function mailLayout_(title, lines) {
+  const site = String(getSettingsObj_().siteUrl || "").replace(/\/$/, "");
+  const link = site ? '<p><a href="' + site + '/student/login" style="background:#0f3d3e;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">স্টুডেন্ট পোর্টাল খুলুন</a></p>' : "";
+  return (
+    '<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #ddd;border-radius:10px;padding:20px">' +
+    '<h2 style="color:#0f3d3e;margin-top:0">' + title + "</h2>" +
+    lines.map((l) => "<p>" + l + "</p>").join("") + link +
+    '<p style="color:#888;font-size:12px">— অগ্রদূত · Linguistic অলিম্পিয়াড প্রস্তুতি কোর্স</p></div>'
+  );
+}
+
+function notifyRegistrationConfirmed_(reg) {
+  sendMailSafe_(
+    reg.email,
+    "আপনার নিবন্ধন কনফার্ম হয়েছে ✓",
+    mailLayout_("অভিনন্দন, " + reg.name + "!", ["আপনার Linguistic অলিম্পিয়াড প্রস্তুতি কোর্সের নিবন্ধন কনফার্ম হয়েছে।", "এখন নিবন্ধনের সময় দেওয়া ইমেইল ও পাসওয়ার্ড দিয়ে স্টুডেন্ট পোর্টালে লগইন করে পরীক্ষা দিতে পারবেন।"])
+  );
+}
+
+/** একটা পরীক্ষা-সেশনের সবগুলো খাতা মূল্যায়ন হয়ে গেলে স্টুডেন্টকে ইমেইল */
+function notifyIfSessionGraded_(itemIds) {
+  const all = sheetToObjects_(getSheet_("WrittenAttempts"));
+  const idSet = {};
+  itemIds.forEach((id) => (idSet[String(id)] = true));
+  const sessionIds = {};
+  all.forEach((a) => {
+    if (idSet[String(a.id)]) sessionIds[String(a.sessionId)] = String(a.registrationId);
+  });
+  Object.keys(sessionIds).forEach((sid) => {
+    const rows = all.filter((a) => String(a.sessionId) === sid);
+    if (rows.length === 0 || !rows.every((a) => a.status === "graded")) return;
+    const reg = findRegistrationById_(sessionIds[sid]);
+    if (!reg) return;
+    const score = rows.reduce((n, a) => n + (Number(a.score) || 0), 0);
+    const total = rows.reduce((n, a) => n + (Number(a.points) || 0), 0);
+    sendMailSafe_(
+      reg.email,
+      "আপনার খাতার মূল্যায়ন শেষ — " + score + "/" + total,
+      mailLayout_("আপনার ফলাফল এসেছে", ["প্রিয় " + reg.name + ", আপনার জমা দেওয়া খাতার মূল্যায়ন শেষ হয়েছে।", "<b>প্রাপ্ত নম্বর: " + score + " / " + total + "</b>", "মেন্টরের দাগ ও মন্তব্য দেখতে পোর্টালে যান।"])
+    );
+  });
+}
+
+/** [সময়-ভিত্তিক ট্রিগার, প্রতি ১০ মিনিটে] আসন্ন লাইভ পরীক্ষার আগে (৩৫ মিনিটের মধ্যে) একবার করে কনফার্মড স্টুডেন্টদের মনে করিয়ে দেয় */
+function liveReminderTick() {
+  const props = PropertiesService.getScriptProperties();
+  const now = Date.now();
+  listLiveExams_().forEach((e) => {
+    const diff = new Date(e.start).getTime() - now;
+    if (diff <= 0 || diff > 35 * 60000 || props.getProperty("rem_" + e.id)) return;
+    const mins = Math.max(1, Math.round(diff / 60000));
+    const emails = sheetToObjects_(getSheet_("Registrations"))
+      .filter((r) => r.status === "confirmed" && r.email)
+      .map((r) => String(r.email));
+    for (let i = 0; i < emails.length; i += 40) {
+      try {
+        MailApp.sendEmail({
+          to: Session.getEffectiveUser().getEmail(),
+          bcc: emails.slice(i, i + 40).join(","),
+          subject: "লাইভ পরীক্ষা শুরু হচ্ছে — " + e.title,
+          htmlBody: mailLayout_("লাইভ পরীক্ষা শুরু হতে ~" + mins + " মিনিট বাকি", ["<b>" + e.title + "</b> শীঘ্রই শুরু হচ্ছে। সময়কাল " + e.minutes + " মিনিট।", "ভালো ইন্টারনেট সংযোগ নিশ্চিত করে পোর্টালের লাইভ পরীক্ষা অংশে যান।"]),
+          name: "অগ্রদূত Linguistic",
+        });
+      } catch (err) {
+        Logger.log("রিমাইন্ডার ব্যর্থ: " + err);
+      }
+    }
+    props.setProperty("rem_" + e.id, String(now));
+  });
+}
+
+/** [সময়-ভিত্তিক ট্রিগার, প্রতিদিন রাত ৩টায়] পুরো ডেটাবেজ শিটের একটা কপি Drive-এর "Linguistic Backups" ফোল্ডারে; শেষ ১৪টা রাখা হয় */
+function dailyBackup() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const it = DriveApp.getFoldersByName("Linguistic Backups");
+  const folder = it.hasNext() ? it.next() : DriveApp.createFolder("Linguistic Backups");
+  const stamp = Utilities.formatDate(new Date(), "Asia/Dhaka", "yyyy-MM-dd");
+  DriveApp.getFileById(ss.getId()).makeCopy("Linguistic Backup " + stamp, folder);
+  const files = [];
+  const fit = folder.getFiles();
+  while (fit.hasNext()) files.push(fit.next());
+  files.sort((a, b) => b.getDateCreated() - a.getDateCreated());
+  files.slice(14).forEach((f) => f.setTrashed(true));
+}
+
+function installTriggers_() {
+  try {
+    ScriptApp.getProjectTriggers().forEach((t) => {
+      const f = t.getHandlerFunction();
+      if (f === "dailyBackup" || f === "liveReminderTick") ScriptApp.deleteTrigger(t);
+    });
+    ScriptApp.newTrigger("dailyBackup").timeBased().everyDays(1).atHour(3).create();
+    ScriptApp.newTrigger("liveReminderTick").timeBased().everyMinutes(10).create();
+  } catch (e) {
+    Logger.log("ট্রিগার বসানো যায়নি (অনুমতি দিয়ে setup আবার Run করুন): " + e);
+  }
+}
+
+/* ---------------- অ্যাডমিন: পরিসংখ্যান ও এক্সপোর্ট ---------------- */
+
+function plainSnippet_(html, fallback) {
+  const t = String(html || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  return t ? (t.length > 70 ? t.slice(0, 70) + "…" : t) : fallback;
+}
+
+function buildAdminStats_() {
+  const regs = sheetToObjects_(getSheet_("Registrations"));
+  const attempts = sheetToObjects_(getSheet_("WrittenAttempts"));
+  const qs = parsedWrittenQuestions_();
+  const qById = {};
+  qs.forEach((q) => (qById[String(q.id)] = q));
+
+  const registrations = {
+    total: regs.length,
+    pending: regs.filter((r) => r.status === "pending").length,
+    confirmed: regs.filter((r) => r.status === "confirmed").length,
+    rejected: regs.filter((r) => r.status === "rejected").length,
+  };
+
+  const pendingImages = {};
+  attempts.filter((a) => a.status === "pending").forEach((a) => (pendingImages[a.imageUrl] = true));
+
+  // মডেল টেস্ট ধরে
+  const byTest = {};
+  attempts.filter((a) => a.examType === "mock").forEach((a) => {
+    const id = String(a.writtenQuestionId);
+    if (!byTest[id]) byTest[id] = { sessions: {}, students: {}, score: 0, points: 0, pending: 0 };
+    const t = byTest[id];
+    t.sessions[a.sessionId] = true;
+    t.students[a.registrationId] = true;
+    if (a.status === "graded") {
+      t.score += Number(a.score) || 0;
+      t.points += Number(a.points) || 0;
+    } else t.pending++;
+  });
+  const tests = Object.keys(byTest)
+    .map((id) => {
+      const t = byTest[id];
+      const q = qById[id] || {};
+      return {
+        title: q.testTitle || "(মোছা হয়েছে)",
+        testNo: q.testNo || 999,
+        sessions: Object.keys(t.sessions).length,
+        students: Object.keys(t.students).length,
+        pending: t.pending,
+        avgPercent: t.points ? Math.round((t.score / t.points) * 100) : null,
+      };
+    })
+    .sort((a, b) => a.testNo - b.testNo);
+
+  // সবচেয়ে কঠিন প্রশ্ন (গড় % সবচেয়ে কম)
+  const byQ = {};
+  attempts.filter((a) => a.status === "graded" && Number(a.points) > 0).forEach((a) => {
+    const key = a.writtenQuestionId + "|" + a.subQuestionId;
+    if (!byQ[key]) byQ[key] = { qid: String(a.writtenQuestionId), text: a.subQuestionText, hasImg: !!a.subQuestionImageUrl, score: 0, points: 0, n: 0 };
+    byQ[key].score += Number(a.score) || 0;
+    byQ[key].points += Number(a.points) || 0;
+    byQ[key].n++;
+  });
+  const hardQuestions = Object.values(byQ)
+    .map((x) => ({
+      test: (qById[x.qid] || {}).testTitle || (attempts.some((a) => String(a.writtenQuestionId) === x.qid && a.examType === "live") ? "লাইভ" : ""),
+      text: plainSnippet_(x.text, x.hasImg ? "(ছবির প্রশ্ন)" : "প্রশ্ন"),
+      avgPercent: Math.round((x.score / x.points) * 100),
+      answers: x.n,
+    }))
+    .sort((a, b) => a.avgPercent - b.avgPercent)
+    .slice(0, 8);
+
+  // লাইভ পরীক্ষা ধরে অংশগ্রহণ
+  const live = listLiveExams_().map((e) => {
+    const ps = {};
+    attempts.filter((a) => a.examType === "live" && String(a.liveExamId) === e.id).forEach((a) => (ps[a.registrationId] = true));
+    return { title: e.title, participants: Object.keys(ps).length };
+  });
+
+  return { registrations, pendingGrading: Object.keys(pendingImages).length, tests, hardQuestions, live };
+}
+
+/** সব সেশনের ফলাফল সারি আকারে — অ্যাডমিন ব্রাউজারে CSV/Excel বানাবে */
+function buildResultsExport_() {
+  const regs = {};
+  sheetToObjects_(getSheet_("Registrations")).forEach((r) => (regs[String(r.id)] = r));
+  const qById = {};
+  parsedWrittenQuestions_().forEach((q) => (qById[String(q.id)] = q));
+  const liveTitle = {};
+  listLiveExams_().forEach((e) => (liveTitle[e.id] = e.title));
+  const sessions = {};
+  sheetToObjects_(getSheet_("WrittenAttempts")).forEach((a) => {
+    const k = String(a.sessionId);
+    if (!sessions[k]) {
+      const r = regs[String(a.registrationId)] || {};
+      const q = qById[String(a.writtenQuestionId)] || {};
+      sessions[k] = {
+        name: r.name || "", className: r.className || "", school: r.school || "", division: r.division || "",
+        phone: r.phone || "", email: r.email || "",
+        exam: a.examType === "live" ? liveTitle[String(a.liveExamId)] || "লাইভ" : q.testTitle || "Model Test",
+        type: a.examType === "live" ? "লাইভ" : "মডেল টেস্ট",
+        date: a.createdAt, score: 0, total: 0, allGraded: true,
+      };
+    }
+    const sess = sessions[k];
+    sess.total += Number(a.points) || 0;
+    if (a.status === "graded") sess.score += Number(a.score) || 0;
+    else sess.allGraded = false;
+  });
+  return Object.values(sessions)
+    .map((x) => ({ ...x, status: x.allGraded ? "মূল্যায়িত" : "পেন্ডিং", score: x.allGraded ? x.score : "" }))
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
 function gradeWrittenAttemptsBatch_(items, annotatedImageUrl, adminComment) {
   let count = 0;
   items.forEach((item) => {
@@ -1066,7 +1380,18 @@ function doPost(e) {
 
       case "adminListRegistrations": {
         if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
-        return jsonOut_({ ok: true, data: sheetToObjects_(getSheet_("Registrations")) });
+        const regRows = sheetToObjects_(getSheet_("Registrations"));
+        const trxCount = {};
+        const normTrx = (v) => String(v || "").trim().toUpperCase();
+        regRows.forEach((r) => {
+          const k = normTrx(r.transactionId);
+          if (k) trxCount[k] = (trxCount[k] || 0) + 1;
+        });
+        regRows.forEach((r) => {
+          const k = normTrx(r.transactionId);
+          r.duplicateTrx = !!k && trxCount[k] > 1;
+        });
+        return jsonOut_({ ok: true, data: regRows });
       }
 
       case "adminUpdateRegistrationStatus": {
@@ -1074,7 +1399,12 @@ function doPost(e) {
         const sheet = getSheet_("Registrations");
         const rowIdx = findRowIndexById_(sheet, body.id);
         if (rowIdx === -1) return jsonOut_({ ok: false, message: "রেজিস্ট্রেশন পাওয়া যায়নি" });
+        const prevStatus = sheet.getRange(rowIdx, REGISTRATION_HEADERS.indexOf("status") + 1).getValue();
         sheet.getRange(rowIdx, REGISTRATION_HEADERS.indexOf("status") + 1).setValue(body.status);
+        if (body.status === "confirmed" && prevStatus !== "confirmed") {
+          const regRow = findRegistrationById_(body.id);
+          if (regRow) notifyRegistrationConfirmed_(regRow);
+        }
         return jsonOut_({ ok: true });
       }
 
@@ -1356,6 +1686,16 @@ function doPost(e) {
 
       /* ---------- অ্যাডমিন: খাতা মূল্যায়ন ---------- */
 
+      case "adminStats": {
+        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
+        return jsonOut_({ ok: true, data: buildAdminStats_() });
+      }
+
+      case "adminResultsExport": {
+        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
+        return jsonOut_({ ok: true, data: buildResultsExport_() });
+      }
+
       case "adminListPendingWritten": {
         if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
         return jsonOut_({ ok: true, data: listPendingWrittenAttempts_() });
@@ -1380,6 +1720,7 @@ function doPost(e) {
           annotatedImageUrl = uploadImageToDrive_(body.annotatedImageBase64, "image/jpeg", "graded_" + Utilities.getUuid() + ".jpg");
         }
         const count = gradeWrittenAttemptsBatch_(body.items, annotatedImageUrl, body.adminComment);
+        notifyIfSessionGraded_(body.items.map((it) => it.id));
         return jsonOut_({ ok: true, data: { count } });
       }
 
@@ -1409,10 +1750,12 @@ function doPost(e) {
           sheet.getRange(rowIdx, col("start")).setValue(start);
           sheet.getRange(rowIdx, col("end")).setValue(end);
           sheet.getRange(rowIdx, col("minutes")).setValue(minutes);
+          cacheDrop_(["liveExams_v1"]);
           return jsonOut_({ ok: true, data: { id: body.id } });
         }
         const id = Utilities.getUuid();
         appendRowByHeaders_(sheet, { id, title, start, end, minutes, createdAt: new Date() });
+        cacheDrop_(["liveExams_v1"]);
         return jsonOut_({ ok: true, data: { id } });
       }
 
@@ -1422,6 +1765,7 @@ function doPost(e) {
         const rowIdx = findRowIndexById_(sheet, body.id);
         if (rowIdx === -1) return jsonOut_({ ok: false, message: "লাইভ পরীক্ষা পাওয়া যায়নি" });
         sheet.deleteRow(rowIdx);
+        cacheDrop_(["liveExams_v1"]);
         return jsonOut_({ ok: true });
       }
 

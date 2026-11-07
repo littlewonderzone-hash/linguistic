@@ -16,6 +16,12 @@ export function TopBar() {
         </Link>
         <nav className="flex items-center gap-2 text-sm font-medium text-[var(--color-ink)] sm:gap-4">
           <Link
+            to="/puzzles"
+            className="hidden rounded-full border-2 border-[var(--color-ink)] px-3 py-1 font-display text-xs font-bold text-[var(--color-ink)] transition hover:bg-[var(--color-ink)] hover:text-white sm:inline-block sm:text-sm"
+          >
+            ধাঁধা
+          </Link>
+          <Link
             to="/status"
             className="rounded-full bg-[var(--color-marigold)] px-3 py-1.5 font-display text-xs font-bold text-[var(--color-ink-dark)] shadow-sm transition hover:brightness-110 sm:px-4 sm:text-sm"
           >

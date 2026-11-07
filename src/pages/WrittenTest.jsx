@@ -3,11 +3,32 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import WrittenExamRunner from "../components/WrittenExamRunner";
 import Loader from "../components/Loader";
+import FloatingContact from "../components/FloatingContact";
 
 /** লিখিত পরীক্ষা: Model Test-01, 02, ... তালিকা থেকে স্টুডেন্ট যেটা খুশি বেছে নিতে পারে।
  *  প্রতিটা মডেল টেস্টের প্রশ্ন ও সময় অ্যাডমিনের ঠিক করা — সবার জন্য একই, র‍্যান্ডম নয়।
  *  একটা শেষ হলে পরেরটা দেওয়া যায়; আগেরটা আবার দিয়ে অনুশীলনও করা যায়। */
 export default function WrittenTest() {
+  return (
+    <>
+      <WrittenTestInner />
+      <FloatingContactWhenIdle />
+    </>
+  );
+}
+
+function FloatingContactWhenIdle() {
+  // পরীক্ষা চলার সময় (ফুলস্ক্রিন-মোডের মতো) বাটন লুকানো থাকে — সময়ে মনোযোগ না ভাঙতে
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    const on = (e) => setHidden(!!e.detail);
+    window.addEventListener("lx-exam-running", on);
+    return () => window.removeEventListener("lx-exam-running", on);
+  }, []);
+  return hidden ? null : <FloatingContact />;
+}
+
+function WrittenTestInner() {
   const token = localStorage.getItem("linguistic_student_token");
   const [tests, setTests] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -18,6 +39,11 @@ export default function WrittenTest() {
     if (step !== "list") return;
     api.modelTests(token).then((res) => setTests(res.ok ? res.data || [] : []));
   }, [token, step]);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("lx-exam-running", { detail: step === "exam" }));
+    return () => window.dispatchEvent(new CustomEvent("lx-exam-running", { detail: false }));
+  }, [step]);
 
   /* ===== পরীক্ষা চলছে ===== */
   if (step === "exam" && selected) {

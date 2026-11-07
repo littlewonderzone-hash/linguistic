@@ -9,6 +9,8 @@ import Contact from "./pages/Contact";
 import WrittenTest from "./pages/WrittenTest";
 import LiveExam from "./pages/LiveExam";
 import Leaderboard from "./pages/Leaderboard";
+import Puzzles from "./pages/Puzzles";
+import FloatingContact from "./components/FloatingContact";
 import AdminLogin from "./pages/admin/AdminLogin";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 
@@ -18,6 +20,7 @@ function PublicLayout({ children }) {
       <TopBar />
       <main className="flex-1">{children}</main>
       <Footer />
+      {localStorage.getItem("linguistic_student_token") && <FloatingContact />}
     </div>
   );
 }
@@ -32,6 +35,7 @@ export default function App() {
         <Route path="/contact" element={<PublicLayout><Contact /></PublicLayout>} />
         <Route path="/student/login" element={<PublicLayout><StudentLogin /></PublicLayout>} />
         <Route path="/student" element={<StudentPortal />} />
+        <Route path="/puzzles" element={<PublicLayout><Puzzles /></PublicLayout>} />
         <Route path="/leaderboard" element={<PublicLayout><Leaderboard /></PublicLayout>} />
 
         {/* পরীক্ষার পেজ ইচ্ছাকৃতভাবে সাইট হেডার/ফুটার ছাড়া — ফুলস্ক্রিন এক্সাম মোডের জন্য */}

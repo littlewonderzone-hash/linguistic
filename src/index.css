@@ -227,3 +227,10 @@ body {
     border-top: 2px dashed var(--color-ink); opacity: 0.35;
   }
 }
+
+
+/* প্রশ্ন/সমাধানের লেখা — Noto Serif (IPA ও ভাষাবিজ্ঞানের চিহ্নসহ) + Noto Serif Bengali (বাংলা) */
+.lx-q, .lx-q * {
+  font-family: "Noto Serif", "Noto Serif Bengali", "Hind Siliguri", Georgia, serif;
+}
+.lx-q { line-height: 1.75; }

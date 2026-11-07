@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import WrittenExamRunner from "../components/WrittenExamRunner";
 import Loader from "../components/Loader";
+import FloatingContact from "../components/FloatingContact";
 
 function useCountdown(endsAt) {
   const [left, setLeft] = useState("");
@@ -38,6 +39,10 @@ const STATUS = {
 };
 
 export default function LiveExam() {
+  return <LiveExamInner />;
+}
+
+function LiveExamInner() {
   const token = localStorage.getItem("linguistic_student_token");
   const [exams, setExams] = useState(null);
   const [selected, setSelected] = useState(null); // বেছে নেওয়া লাইভ পরীক্ষা
@@ -59,6 +64,7 @@ export default function LiveExam() {
   if (step === "finished") {
     return (
       <div className="mx-auto max-w-md px-4 py-16 text-center">
+        <FloatingContact />
         <p className="font-display text-2xl font-bold text-[var(--color-greenpen)]">লাইভ পরীক্ষা সম্পন্ন হয়েছে ✓</p>
         <p className="mt-2 text-sm text-[var(--color-text)]/70">
           আপনার খাতা মূল্যায়নের অপেক্ষায় আছে। মূল্যায়নের পর ফলাফল পোর্টালে দেখা যাবে এবং লাইভ পরীক্ষার মেরিট তালিকাও
@@ -86,6 +92,7 @@ export default function LiveExam() {
   if (step === "intro" && selected) {
     return (
       <div className="mx-auto max-w-lg px-4 py-12">
+        <FloatingContact />
         <button onClick={() => setStep("list")} className="mb-3 text-sm font-bold text-[var(--color-bluepen)] underline">
           ← তালিকায় ফিরুন
         </button>
@@ -123,6 +130,7 @@ export default function LiveExam() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-12">
+      <FloatingContact />
       <h1 className="font-display text-2xl font-bold text-[var(--color-ink)]">লাইভ পরীক্ষা</h1>
       <p className="mt-1 text-sm text-[var(--color-text)]/70">
         প্রতিটা লাইভ পরীক্ষায় একবার অংশ নেওয়া যায়। একই দিনে একাধিক লাইভ পরীক্ষা থাকলে সবগুলোতেই অংশ নিতে পারবেন।

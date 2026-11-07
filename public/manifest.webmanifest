@@ -1,0 +1,17 @@
+{
+  "name": "অগ্রদূত Linguistic — অলিম্পিয়াড প্রস্তুতি কোর্স",
+  "short_name": "Linguistic",
+  "description": "লিঙ্গুইসটিক অলিম্পিয়াড প্রস্তুতি কোর্স — Model Test, লাইভ পরীক্ষা ও মেরিট তালিকা",
+  "start_url": "/student",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eff1ec",
+  "theme_color": "#0f3d3e",
+  "lang": "bn",
+  "icons": [
+    { "src": "/images/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/images/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/images/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
