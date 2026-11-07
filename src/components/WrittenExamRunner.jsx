@@ -25,7 +25,7 @@ function PhotoPicker({ onFile }) {
   );
 }
 
-export default function WrittenExamRunner({ examType = "mock", kind = "written", liveExamId = "", onFinished }) {
+export default function WrittenExamRunner({ examType = "mock", kind = "written", liveExamId = "", modelTestId = "", onFinished }) {
   const token = localStorage.getItem("linguistic_student_token");
 
   const [stage, setStage] = useState("loading");
@@ -35,6 +35,7 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 });
 
+  const [testTitle, setTestTitle] = useState("");
   const stageRef = useRef("loading");
   const imagesRef = useRef(images);
   imagesRef.current = images;
@@ -45,10 +46,11 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
   useEffect(() => {
     if (!token) return;
     api
-      .startWrittenExam(token, examType, kind, liveExamId)
+      .startWrittenExam(token, examType, kind, liveExamId, modelTestId)
       .then((res) => {
         if (res.ok) {
           sessionIdRef.current = res.data.sessionId;
+          setTestTitle(res.data.title || "");
           setSets(res.data.sets);
           setSecondsLeft((Number(res.data.minutes) > 0 ? Number(res.data.minutes) : 25) * 60);
           setStage("exam");
@@ -192,7 +194,7 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
   return (
     <div className="min-h-screen bg-[var(--color-paper)] pb-24">
       <div className="sticky top-0 z-30 flex items-center justify-between bg-[var(--color-ink)] px-4 py-2 font-display font-bold text-white">
-        <span>{TITLE[kind]}</span>
+        <span>{testTitle || TITLE[kind]}</span>
         <span className="tabular-nums">
           {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
         </span>

@@ -38,7 +38,7 @@ function GlyphChart({ faded = false }) {
 const HELLOS = ["Hello", "হ্যালো", "こんにちは", "مرحبا", "Привет", "Γειά σου", "你好", "안녕하세요", "नमस्ते", "Hola", "Bonjour", "Merhaba"];
 
 const FEATURES = [
-  { glyph: "ক", color: "var(--color-redpen)", title: "আনলিমিটেড মক টেস্ট", desc: "যতবার ইচ্ছা অনুশীলন, কোনো সীমা নেই।" },
+  { glyph: "ক", color: "var(--color-redpen)", title: "Model Test সিরিজ", desc: "Model Test-01, 02, 03… নিজের ইচ্ছামতো বেছে নিয়ে ধাপে ধাপে দাও, যতবার খুশি অনুশীলন।" },
   { glyph: "α", color: "var(--color-bluepen)", title: "আসল পরীক্ষার অনুরূপ", desc: "প্রশ্নের মান ও ধরন হুবহু আসল পরীক্ষার অনুরূপ।" },
   { glyph: "ʃ", color: "var(--color-marigold-dark)", title: "লাইভ পরীক্ষা", desc: "নির্দিষ্ট সময়ে সবার সাথে প্রতিযোগিতামূলক পরীক্ষা ও র‍্যাঙ্কিং।" },
   { glyph: "あ", color: "var(--color-greenpen)", title: "অভিজ্ঞ মেন্টর দ্বারা মূল্যায়ন", desc: "লিখিত খাতা সরাসরি অভিজ্ঞ মেন্টরদের দ্বারা মূল্যায়ন।" },
@@ -50,7 +50,7 @@ const STEPS = [
   ["নিবন্ধন", "ফর্ম পূরণ করে বিকাশে পেমেন্ট"],
   ["যাচাই", "অ্যাডমিন পেমেন্ট দেখে কনফার্ম করেন"],
   ["লগইন", "ইমেইল ও পাসওয়ার্ডে পোর্টালে ঢুকুন"],
-  ["পরীক্ষা", "মক বা লাইভ - খাতায় লিখে ছবি জমা"],
+  ["পরীক্ষা", "Model Test বা লাইভ — খাতায় লিখে ছবি জমা"],
 ];
 
 /* ছোট্ট ধাঁধা — একটা বানানো ভাষার দুটো নিয়ম ধরে তৃতীয়টা বের করা (অলিম্পিয়াডের ধরনের নমুনা) */
@@ -143,8 +143,8 @@ export default function Home() {
             </p>
             <p className="mt-1 font-display text-base font-semibold text-[var(--color-paper)]/80">অগ্রদূত উপস্থাপিত</p>
             <p className="mt-5 max-w-md text-base leading-relaxed text-[var(--color-paper)]/90 md:text-lg">
-              ষষ্ঠ থেকে দ্বাদশ শ্রেণির শিক্ষার্থীদের জন্য ভাষাবিজ্ঞান অলিম্পিয়াডের পরিপূর্ণ প্রস্তুতি। লিখিত
-              মক টেস্ট, লাইভ পরীক্ষা, বিস্তারিত মূল্যায়ন ও র‍্যাঙ্কিং — সবকিছু এক জায়গায়।
+              ষষ্ঠ থেকে দশম শ্রেণির শিক্ষার্থীদের জন্য ভাষাবিজ্ঞান অলিম্পিয়াডের পরিপূর্ণ প্রস্তুতি। লিখিত
+              Model Test সিরিজ, লাইভ পরীক্ষা, বিস্তারিত মূল্যায়ন ও র‍্যাঙ্কিং — সবকিছু এক জায়গায়।
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -188,7 +188,7 @@ export default function Home() {
               <GlyphChart />
             )}
             <figcaption className="lx-serif mt-4 flex items-center justify-between gap-3 text-xs italic text-[var(--color-paper)]/75">
-              <span>চিত্র: নানা ভাষার বর্ণমালা — ঘরে ঘরে ছুঁয়ে দেখো</span>
+              <span>চিত্র ১: নানা ভাষার বর্ণমালা — ঘরে ঘরে ছুঁয়ে দেখো</span>
               <span className="lx-serif-bn rotate-[-3deg] rounded-sm bg-white px-3 py-1.5 text-sm font-bold not-italic text-[var(--color-ink)] shadow-lg">
                 {priceLabel}
               </span>

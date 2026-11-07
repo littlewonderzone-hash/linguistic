@@ -12,9 +12,10 @@ const DIVISIONS = [
   "সিলেট",
   "রংপুর",
   "ময়মনসিংহ",
+  "কুমিল্লা",
 ];
 
-const CLASSES = ["ষষ্ঠ", "সপ্তম", "অষ্টম", "নবম", "দশম", "একাদশ", "দ্বাদশ"];
+const CLASSES = ["ষষ্ঠ", "সপ্তম", "অষ্টম", "নবম", "দশম"];
 
 const empty = {
   name: "",
@@ -38,7 +39,7 @@ export default function Register() {
 
   function copyBkashNumber() {
     navigator.clipboard
-      .writeText("01872821870")
+      .writeText("01710176301")
       .then(() => {
         setBkashCopied(true);
         setTimeout(() => setBkashCopied(false), 2000);
@@ -58,7 +59,7 @@ export default function Register() {
       return "সব ঘর পূরণ করুন।";
     }
     if (!/^01[0-9]{9}$/.test(form.phone)) {
-      return "সঠিক মোবাইল নম্বর দিন (11 ডিজিট, 01 দিয়ে শুরু)।";
+      return "সঠিক মোবাইল নম্বর দিন (১১ ডিজিট, ০১ দিয়ে শুরু)।";
     }
     if (form.password.length < 4) {
       return "পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে।";
@@ -202,7 +203,7 @@ export default function Register() {
             <div className="rounded-xl border border-[var(--color-marigold)]/40 bg-[var(--color-marigold)]/10 p-4 text-sm leading-relaxed">
               নিচের বিকাশ নম্বরে{" "}
               <span className="inline-flex items-center gap-2 align-middle">
-                <span className="font-display text-base font-bold text-[var(--color-ink)]">01872821870</span>
+                <span className="font-display text-base font-bold text-[var(--color-ink)]">01710176301</span>
                 <button
                   type="button"
                   onClick={copyBkashNumber}
@@ -224,7 +225,7 @@ export default function Register() {
                   required
                   value={form.bkashSender}
                   onChange={setPhoneLike("bkashSender")}
-                  placeholder="01XXXXXXXXX"
+                  placeholder="০১XXXXXXXXX"
                   inputMode="numeric"
                   maxLength={11}
                 />

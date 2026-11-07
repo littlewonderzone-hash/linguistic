@@ -244,15 +244,12 @@ function Settings({ token }) {
 
       <div className="rounded-lg border border-[var(--color-paper-line)] p-3">
         <p className="mb-2 text-sm font-bold text-[var(--color-ink)]">লিখিত পরীক্ষা (মক টেস্ট)</p>
-        <Field label="পরীক্ষার সময় (মিনিট)">
+        <Field label="ডিফল্ট সময় (মিনিট) — যে মডেল টেস্টে আলাদা সময় দেওয়া নেই সেগুলোর জন্য">
           <input className="input" type="number" min="1" value={form.writtenMinutes || ""} onChange={set("writtenMinutes")} placeholder="যেমনঃ 25" />
         </Field>
-        <Field label="প্রতিবার কয়টা সেট (উদ্দীপক) আসবে">
-          <input className="input" type="number" min="1" value={form.setsPerExam || ""} onChange={set("setsPerExam")} placeholder="যেমনঃ 3" />
-        </Field>
         <p className="text-xs text-[var(--color-text)]/60">
-          একটা সেটের ভেতরে যত খুশি প্রশ্ন রাখা যায় (প্রশ্ন ট্যাবে "+ আরেকটা প্রশ্ন যোগ করুন")। লাইভ পরীক্ষার সময় ও সময়সূচি
-          আলাদা "লাইভ পরীক্ষা" ট্যাব থেকে ঠিক করুন।
+          প্রতিটা মডেল টেস্টের নিজস্ব সময় প্রশ্ন ট্যাবে প্রশ্ন লেখার ফর্মেই ঠিক করা যায়। লাইভ পরীক্ষার সময় ও
+          সময়সূচি আলাদা "লাইভ পরীক্ষা" ট্যাব থেকে ঠিক করুন।
         </p>
       </div>
 
@@ -429,6 +426,8 @@ const emptyWrittenQuestion = {
   forMock: true,
   forLive: false,
   liveExamId: "",
+  testNo: "",
+  minutes: "",
 };
 
 function WrittenQuestions({ token }) {
@@ -513,6 +512,8 @@ function WrittenQuestions({ token }) {
       forMock: q.forMock === true || q.forMock === "TRUE",
       forLive: q.forLive === true || q.forLive === "TRUE",
       liveExamId: q.liveExamId || "",
+      testNo: q.testNo || "",
+      minutes: q.minutes || "",
     });
     setResetKey((k) => k + 1);
     setError("");
@@ -621,12 +622,41 @@ function WrittenQuestions({ token }) {
 
         <div className="flex gap-4 text-sm font-semibold text-[var(--color-ink)]">
           <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={form.forMock} onChange={(e) => setForm((f) => ({ ...f, forMock: e.target.checked }))} /> মক টেস্ট
+            <input type="checkbox" checked={form.forMock} onChange={(e) => setForm((f) => ({ ...f, forMock: e.target.checked }))} /> মডেল টেস্ট
           </label>
           <label className="flex items-center gap-1.5">
             <input type="checkbox" checked={form.forLive} onChange={(e) => setForm((f) => ({ ...f, forLive: e.target.checked }))} /> লাইভ টেস্ট
           </label>
         </div>
+        {form.forMock && (
+          <div className="rounded-lg border border-[var(--color-marigold)]/50 bg-[var(--color-marigold)]/10 p-3">
+            <p className="mb-2 text-xs font-bold text-[var(--color-marigold-dark)]">
+              এই প্রশ্নটাই একটা মডেল টেস্ট — স্টুডেন্ট Model Test তালিকা থেকে বেছে এটাই পাবে (র‍্যান্ডম নয়)
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="সময় (মিনিট)">
+                <input
+                  className="input"
+                  type="number"
+                  min="1"
+                  value={form.minutes}
+                  onChange={(e) => setForm((f) => ({ ...f, minutes: e.target.value }))}
+                  placeholder="ফাঁকা = ডিফল্ট"
+                />
+              </Field>
+              <Field label="Model Test নম্বর">
+                <input
+                  className="input"
+                  type="number"
+                  min="1"
+                  value={form.testNo}
+                  onChange={(e) => setForm((f) => ({ ...f, testNo: e.target.value }))}
+                  placeholder="ফাঁকা = পরের নম্বর"
+                />
+              </Field>
+            </div>
+          </div>
+        )}
         {form.forLive && (
           <Field label="কোন লাইভ পরীক্ষায় আসবে?">
             <select className="input" value={form.liveExamId || ""} onChange={(e) => setForm((f) => ({ ...f, liveExamId: e.target.value }))}>
@@ -677,7 +707,10 @@ function WrittenQuestions({ token }) {
                     <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${q.status === "published" ? "bg-[var(--color-greenpen)]/15 text-[var(--color-greenpen)]" : "bg-[var(--color-marigold)]/20 text-[var(--color-marigold-dark)]"}`}>
                       {q.status === "published" ? "প্রকাশিত" : "ড্রাফট"}
                     </span>{" "}
-                    <span className="text-xs text-[var(--color-text)]/60">লিখিত · {(q.subQuestions || []).length}টি প্রশ্ন</span>
+                    <span className="text-xs font-semibold text-[var(--color-ink)]">{q.testTitle || "শুধু লাইভ"}</span>{" "}
+                    <span className="text-xs text-[var(--color-text)]/60">
+                      · {(q.subQuestions || []).length}টি প্রশ্ন{q.minutes ? ` · ${q.minutes} মিনিট` : ""}{q.forLive === true || q.forLive === "TRUE" ? " · লাইভ" : ""}
+                    </span>
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button onClick={() => startEdit(q)} className="text-xs font-bold text-[var(--color-bluepen)] underline">এডিট</button>
@@ -703,7 +736,7 @@ function WrittenQuestions({ token }) {
 }
 
 const KIND_LABEL_ADMIN = { written: "লিখিত" };
-const EXAM_TYPE_LABEL_ADMIN = { mock: "মক", live: "লাইভ" };
+const EXAM_TYPE_LABEL_ADMIN = { mock: "মডেল টেস্ট", live: "লাইভ" };
 
 function groupPendingWritten_(list) {
   const groups = {};
@@ -714,7 +747,7 @@ function groupPendingWritten_(list) {
     // আসলেও (যেমন একাধিক উদ্দীপক) — তাই ছবিই আসল গ্রুপিং কী।
     const key = item.imageUrl;
     if (!groups[key]) {
-      groups[key] = { key, imageUrl: item.imageUrl, kind: item.kind, examType: item.examType, passageHtml: item.passageHtml || "", passageImageUrl: item.passageImageUrl || "", items: [] };
+      groups[key] = { key, imageUrl: item.imageUrl, kind: item.kind, examType: item.examType, passageHtml: item.passageHtml || "", passageImageUrl: item.passageImageUrl || "", testTitle: item.testTitle || "", items: [] };
     }
     groups[key].items.push(item);
   });
@@ -837,7 +870,7 @@ function Grading({ token }) {
               <img src={g.imageUrl} alt="উত্তরপত্র" className="h-32 w-full rounded-md object-cover" />
               <p className="mt-1 text-xs font-semibold text-[var(--color-ink)]">{g.items.length}টি প্রশ্নের উত্তর</p>
               <p className="text-xs text-[var(--color-text)]/60">
-                {KIND_LABEL_ADMIN[g.kind] || g.kind} · {EXAM_TYPE_LABEL_ADMIN[g.examType] || g.examType}
+                {g.testTitle ? `${g.testTitle} · ` : ""}{KIND_LABEL_ADMIN[g.kind] || g.kind} · {EXAM_TYPE_LABEL_ADMIN[g.examType] || g.examType}
               </p>
             </button>
           ))}
@@ -928,14 +961,23 @@ function downloadBase64Pdf_(base64, filename) {
 }
 
 function OfflineExams({ token }) {
-  const [loadingKey, setLoadingKey] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [tests, setTests] = useState(null);
+  const [testId, setTestId] = useState("");
 
-  async function generate(key, apiCall) {
+  useEffect(() => {
+    api.adminListWrittenQuestions(token).then((res) => {
+      const list = res.ok ? res.data : [];
+      setTests(list.filter((q) => q.testNo && q.status === "published").sort((a, b) => a.testNo - b.testNo));
+    });
+  }, [token]);
+
+  async function generate() {
     setError("");
-    setLoadingKey(key);
+    setLoading(true);
     try {
-      const res = await apiCall(token);
+      const res = await api.adminGenerateOfflineWritten(token, testId);
       if (res.ok) {
         downloadBase64Pdf_(res.data.base64, res.data.filename);
       } else {
@@ -944,44 +986,37 @@ function OfflineExams({ token }) {
     } catch {
       setError("সার্ভারের সাথে সংযোগ করা যায়নি।");
     } finally {
-      setLoadingKey(null);
+      setLoading(false);
     }
   }
-
-  const items = [
-    {
-      key: "written",
-      title: "লিখিত প্রশ্নপত্র",
-      desc: "সেটিংসে ঠিক করা সংখ্যক সেট, প্রতিটা আলাদা পাতায়, নিচে উত্তর লেখার জায়গাসহ। সময় সেটিংসের মিনিট অনুযায়ী।",
-      call: api.adminGenerateOfflineWritten,
-    },
-  ];
 
   return (
     <div className="max-w-2xl">
       <p className="mb-4 text-sm text-[var(--color-text)]/70">
-        অফলাইনে পরীক্ষা নেওয়ার জন্য প্রিন্টযোগ্য (A4) প্রশ্নপত্র তৈরি করুন। প্রতিবার জেনারেট করলে
-        যতটা সম্ভব ভিন্ন প্রশ্ন আসার চেষ্টা করা হয় (সম্পূর্ণ রিপিটেশন-মুক্ত নিশ্চয়তা না, তবে ব্যাংকে
-        যথেষ্ট প্রশ্ন থাকলে পুনরাবৃত্তি কম হবে)।
+        অফলাইনে পরীক্ষা নেওয়ার জন্য প্রিন্টযোগ্য (A4) প্রশ্নপত্র। একটা নির্দিষ্ট মডেল টেস্ট বেছে নিন, অথবা সব প্রকাশিত
+        মডেল টেস্ট একসাথে (প্রতিটা আলাদা পাতায়) ডাউনলোড করুন। প্রতিটার নিচে উত্তর লেখার জায়গা ও নির্ধারিত সময় থাকে।
       </p>
       {error && <p className="mb-4 rounded-lg bg-[var(--color-redpen)]/10 px-4 py-2 text-sm text-[var(--color-redpen)]">{error}</p>}
-      <div className="space-y-3">
-        {items.map((it) => (
-          <div key={it.key} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
-            <div>
-              <p className="font-display font-bold text-[var(--color-ink)]">{it.title}</p>
-              <p className="text-xs text-[var(--color-text)]/60">{it.desc}</p>
-            </div>
-            <button
-              disabled={loadingKey === it.key}
-              onClick={() => generate(it.key, it.call)}
-              className="shrink-0 rounded-xl bg-[var(--color-ink)] px-4 py-2 font-display text-sm font-bold text-white disabled:opacity-60"
-            >
-              {loadingKey === it.key ? "তৈরি হচ্ছে…" : "PDF ডাউনলোড"}
-            </button>
-          </div>
-        ))}
-      </div>
+      {tests === null ? (
+        <Loader label="লোড হচ্ছে…" />
+      ) : (
+        <div className="space-y-3 rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
+          <select className="input" value={testId} onChange={(e) => setTestId(e.target.value)}>
+            <option value="">সবগুলো মডেল টেস্ট (একসাথে)</option>
+            {tests.map((t) => (
+              <option key={t.id} value={t.id}>{t.testTitle}{t.minutes ? ` — ${t.minutes} মিনিট` : ""}</option>
+            ))}
+          </select>
+          <button
+            disabled={loading || tests.length === 0}
+            onClick={generate}
+            className="w-full rounded-xl bg-[var(--color-ink)] px-4 py-3 font-display font-bold text-white disabled:opacity-60"
+          >
+            {loading ? "তৈরি হচ্ছে…" : "PDF ডাউনলোড"}
+          </button>
+          {tests.length === 0 && <p className="text-xs text-[var(--color-text)]/60">এখনো কোনো প্রকাশিত মডেল টেস্ট নেই।</p>}
+        </div>
+      )}
     </div>
   );
 }

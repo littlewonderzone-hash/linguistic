@@ -38,12 +38,13 @@ export const api = {
   studentNotices: (token) => callApi("studentNotices", { token }),
   studentWrittenAttempts: (token) => callApi("studentWrittenAttempts", { token }),
 
-  startWrittenExam: (token, examType, kind, liveExamId) =>
-    callApi("startWrittenExam", { token, examType, kind, liveExamId }),
+  modelTests: (token) => callApi("modelTests", { token }),
+  startWrittenExam: (token, examType, kind, liveExamId, modelTestId) =>
+    callApi("startWrittenExam", { token, examType, kind, liveExamId, modelTestId }),
   submitWrittenAnswer: (payload) => callApi("submitWrittenAnswer", payload),
   submitWrittenAnswersBatch: (payload) => callApi("submitWrittenAnswersBatch", payload),
 
-  leaderboard: (examType, liveExamId) => callApi("leaderboard", { examType, liveExamId }),
+  leaderboard: (examType, filterId) => callApi("leaderboard", { examType, filterId }),
 
   adminLogin: (username, password) => callApi("adminLogin", { username, password }),
   adminListRegistrations: (token) => callApi("adminListRegistrations", { token }),
@@ -68,5 +69,5 @@ export const api = {
   adminListLiveExams: (token) => callApi("adminListLiveExams", { token }),
   adminSaveLiveExam: (token, exam) => callApi("adminSaveLiveExam", { token, ...exam }),
   adminDeleteLiveExam: (token, id) => callApi("adminDeleteLiveExam", { token, id }),
-  adminGenerateOfflineWritten: (token) => callApi("adminGenerateOfflineWritten", { token }),
+  adminGenerateOfflineWritten: (token, modelTestId) => callApi("adminGenerateOfflineWritten", { token, modelTestId }),
 };

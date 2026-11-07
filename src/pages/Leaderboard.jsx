@@ -8,6 +8,8 @@ export default function Leaderboard() {
   const [rows, setRows] = useState(null);
   const [liveExams, setLiveExams] = useState([]);
   const [liveExamId, setLiveExamId] = useState("");
+  const [modelTests, setModelTests] = useState([]);
+  const [testId, setTestId] = useState("");
 
   useEffect(() => {
     api.liveExamStatus().then((res) => {
@@ -20,9 +22,13 @@ export default function Leaderboard() {
   }, []);
 
   useEffect(() => {
+    api.modelTests().then((res) => setModelTests(res.ok ? res.data || [] : []));
+  }, []);
+
+  useEffect(() => {
     setRows(null);
-    api.leaderboard(examType, examType === "live" ? liveExamId : undefined).then((res) => setRows(res.ok ? res.data : []));
-  }, [examType, liveExamId]);
+    api.leaderboard(examType, examType === "live" ? liveExamId : testId).then((res) => setRows(res.ok ? res.data : []));
+  }, [examType, liveExamId, testId]);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
@@ -44,6 +50,15 @@ export default function Leaderboard() {
           </button>
         ))}
       </div>
+
+      {examType === "mock" && modelTests.length > 0 && (
+        <select className="input mt-4" value={testId} onChange={(e) => setTestId(e.target.value)}>
+          <option value="">সব মডেল টেস্ট (মোট নম্বর)</option>
+          {modelTests.map((t) => (
+            <option key={t.id} value={t.id}>{t.title}</option>
+          ))}
+        </select>
+      )}
 
       {examType === "live" && liveExams.length > 0 && (
         <select className="input mt-4" value={liveExamId} onChange={(e) => setLiveExamId(e.target.value)}>

@@ -79,8 +79,8 @@ export default function StudentPortal() {
 
         <h2 className="font-display font-bold text-[var(--color-ink)]">পরীক্ষা কেন্দ্র</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <ExamCard title="লিখিত পরীক্ষা" enabled={confirmed} to="/exam/written" />
-          <ExamCard title="লাইভ পরীক্ষা" enabled={confirmed} to="/exam/live" />
+          <ExamCard icon="✍️" title="লিখিত পরীক্ষা" desc="Model Test-01, 02, 03… বেছে নিয়ে দিন" enabled={confirmed} to="/exam/written" />
+          <ExamCard icon="🔴" title="লাইভ পরীক্ষা" desc="সময়সূচি অনুযায়ী, প্রতিটায় একবার" enabled={confirmed} to="/exam/live" />
         </div>
 
         <h2 className="mt-8 font-display font-bold text-[var(--color-ink)]">পরীক্ষার ফলাফল</h2>
@@ -119,7 +119,10 @@ function WrittenResultsList({ sessions }) {
         const total = session.items.reduce((n, i) => n + (Number(i.points) || 0), 0);
         const score = session.items.reduce((n, i) => n + (Number(i.score) || 0), 0);
         const isOpen = openId === session.sessionId;
-        const label = `${KIND_LABEL[session.kind] || session.kind} ${ordinalBySessionId[session.sessionId]}`;
+        const label =
+          session.examType === "live" && session.liveExamTitle
+            ? session.liveExamTitle
+            : session.testTitle || `${KIND_LABEL[session.kind] || session.kind} ${ordinalBySessionId[session.sessionId]}`;
 
         return (
           <div key={session.sessionId} className="rounded-lg border border-[var(--color-paper-line)] bg-white/70 text-sm">
@@ -128,7 +131,7 @@ function WrittenResultsList({ sessions }) {
               className="flex w-full items-center justify-between px-3 py-3 text-left"
             >
               <span className="font-semibold text-[var(--color-ink)]">
-                {label} <span className="text-xs font-normal text-[var(--color-text)]/50">({session.examType === "live" && session.liveExamTitle ? session.liveExamTitle : EXAM_TYPE_LABEL[session.examType] || session.examType})</span>
+                {label} <span className="text-xs font-normal text-[var(--color-text)]/50">({EXAM_TYPE_LABEL[session.examType] || session.examType})</span>
               </span>
               <span className="flex items-center gap-2">
                 {graded ? (
@@ -189,17 +192,22 @@ function groupByImage_(items) {
   return Object.values(groups);
 }
 
-function ExamCard({ title, enabled, to, lockedNote }) {
+function ExamCard({ icon, title, desc, enabled, to, lockedNote }) {
   const body = (
     <div
-      className={`rounded-xl border p-4 text-center font-display text-sm font-bold ${
+      className={`flex h-full items-center gap-3 rounded-xl border-2 p-4 text-left transition ${
         enabled
-          ? "border-[var(--color-marigold)] bg-[var(--color-marigold)]/15 text-[var(--color-ink)]"
+          ? "border-[var(--color-ink)] bg-white shadow-[4px_4px_0_var(--color-marigold)] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_var(--color-marigold)]"
           : "border-[var(--color-paper-line)] bg-white/50 text-[var(--color-text)]/40"
       }`}
     >
-      {title}
-      {!enabled && <div className="mt-1 text-xs font-normal">{lockedNote || "কনফার্ম হওয়ার পর চালু হবে"}</div>}
+      <span className="text-2xl" aria-hidden="true">{icon}</span>
+      <div>
+        <p className="font-display text-base font-bold text-[var(--color-ink)]">{title}</p>
+        <p className="text-xs font-normal text-[var(--color-text)]/65">
+          {enabled ? desc : lockedNote || "কনফার্ম হওয়ার পর চালু হবে"}
+        </p>
+      </div>
     </div>
   );
   return enabled ? <Link to={to}>{body}</Link> : <div>{body}</div>;
